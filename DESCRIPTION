@@ -1,0 +1,45 @@
+Package: PACEanalysis
+Type: Package
+Title: Analysis of PACE DNA Methylation Microarray Data
+Version: 0.1.1
+Author: Alexandra Binder
+Maintainer: Alexandra Binder <ambinder@hawaii.edu>
+Description: Reads in IDAT files, performs data quality 
+    checks and performs site-specific data analysis for 
+    a specified exposure or outcome of interest
+License: What license is it under?
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.1.1
+Suggests: knitr, rmarkdown
+VignetteBuilder: knitr
+Imports:
+  methods,
+  reshape,
+  lmtest,
+  GGally,
+  sva,
+  gplots,
+  growthstandards,
+  heatmap.plus,
+  pvclust,
+  EpiDISH,
+  sesame,
+  sesameData,
+  wateRmelon,
+  RPMM,
+  RefFreeEWAS,
+  IlluminaHumanMethylationEPICmanifest,
+  IlluminaHumanMethylation450kmanifest,
+  FlowSorted.Blood.EPIC,
+  FlowSorted.CordBloodCombined.450k
+Depends: 
+  R (>= 3.5.0),
+  minfi,
+  ggplot2,
+  Hmisc,
+  MASS,
+  sandwich,
+  plyr,
+  IlluminaHumanMethylation450kanno.ilmn12.hg19,
+  IlluminaHumanMethylationEPICanno.ilm10b4.hg19
