@@ -1,0 +1,225 @@
+## ----eval=FALSE---------------------------------------------------------------
+#  
+#  ## First need to install required packages if you don't have them already
+#  install.packages(c("ggplot2","gplots","reshape","RPMM","RefFreeEWAS","pvclust","heatmap.plus",
+#                     "GGally","Hmisc","MASS","sandwich", "lmtest","plyr","remotes"))
+#  remotes::install_github("ki-tools/growthstandards")
+#  
+#  if (!requireNamespace("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+#  BiocManager::install(c("minfi","sva","sesame","wateRmelon","EpiDISH",
+#                         "IlluminaHumanMethylationEPICmanifest",
+#                         "IlluminaHumanMethylation450kmanifest",
+#                         "IlluminaHumanMethylation450kanno.ilmn12.hg19",
+#                         "IlluminaHumanMethylationEPICanno.ilm10b4.hg19",
+#                         "FlowSorted.CordBlood.450k",
+#                         "FlowSorted.Blood.450k"))
+#  
+#  ## Need to then install package, specifying path to the source package
+#  install.packages("F:\\PACE\\PACEanalysis_0.1.0.tar.gz",
+#                   repos = NULL, type="source")
+#  
+
+## ----eval=FALSE---------------------------------------------------------------
+#  ## Attach package
+#  library(PACEanalysis)
+#  
+#  setwd("F:\\PACE\\Birthweight-placenta")
+#  allphenodata<-read.csv("All_Pheno_and_Basenames.csv",header=TRUE)
+#  
+#  ## If the data.frame you are going to specify as PhenoData does not include
+#  ## the column "Basename", you will need to also load a data.frame you are
+#  ## going to specify for the SamplePlacement argument. PhenoData and SamplePlacement
+#  ## are merged on the column name specified by the IDlink argument
+#  
+#  exampledat<-loadingSamples(SamplePlacement=NULL,PhenoData=allphenodata,IDlink="ID",
+#                    BWTvar="BWT",BATCHvar="Study",
+#                    SEXvar="GENDER_A",FemaleInd="1",MaleInd="2",
+#                    ETHNICvar="ETHNIC",GESTvar="gestAge",
+#                    BIRTHLENGTHvar="BirthLength",HEADCIRCUMvar=NULL,
+#                    IDATdir="H:\\UCLA\\PACE\\Birthweight-placenta\\IDATfiles",
+#                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                    savelog=TRUE,
+#                    cohort="HEBC",analysisdate="20201229")
+#  
+#  EDAresults<-ExploratoryDataAnalysis(RGset=exampledat,
+#                    globalvarexplore=c("BWT","Sex"),
+#                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                    savelog=TRUE,
+#                    cohort="HEBC",analysisdate="20201229")
+
+## ----eval=FALSE---------------------------------------------------------------
+#  
+#  processedOut<-preprocessingofData(RGset=exampledat,
+#                    SamplestoRemove=EDAresults$SamplestoRemove,
+#                    ProbestoRemove=EDAresults$ProbestoRemove,
+#                    DetectionPvals=EDAresults$DetectionPval,
+#                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                    compositeCellType="RefFree",
+#                    KchooseManual=NULL,
+#                    savelog=TRUE,
+#                    cohort="HEBC",analysisdate="20201229")
+#  
+
+## ----eval=FALSE---------------------------------------------------------------
+#  
+#  ## If you closed prior R session, you can load list of pre-processed objects
+#  ## that is automatically saved by the preprocessingofData function
+#  
+#  setwd("H:\\UCLA\\PACE\\Birthweight-placenta\\HEBC_20201229_Output")
+#  load("HEBC_20201229_Preprocessed.RData")
+#  
+#  phenodataframe<-as.data.frame(pData(processedOut$mset))
+#  phenodataframe$LBWbin<-ifelse(phenodataframe$BWT<2500,1,0)
+#  phenodataframe$HBWbin<-ifelse(phenodataframe$BWT>4000,1,0)
+#  
+#  modelstorun<-data.frame(varofinterest=c("BWT","LBWbin","HBWbin","BirthLength",
+#                                          "WeightLengthRatio","HeadCircum"))
+#  modelstorun$varofinterest<-as.character(modelstorun$varofinterest)
+#  modelstorun$vartype<-"OutcomeCont"
+#  modelstorun$vartype[modelstorun$varofinterest %in% c("LBWbin","HBWbin")]<-"OutcomeBin"
+#  
+#  ## You can reduce this dataframe to whatever variables you have.
+#  ## For example, if you only have birthweight, you would specify:
+#  ## modelstorun<-data.frame(varofinterest=c("BWT","LBWbin","HBWbin"))
+#  
+#  ## Make sure that you have sufficient numbers of samples between categories
+#  ## of exposure/outcome of interest as well as adjustment variables;
+#  ## you are assumed to have at least 10
+#  
+#  table(phenodataframe$LBWbin)
+#  table(phenodataframe$HBWbin)
+#  table(phenodataframe$Sex)
+#  table(phenodataframe$Parity)
+#  table(phenodataframe$MaternalEd)
+#  table(phenodataframe$Smoke)
+#  table(phenodataframe$Ethnic)
+#  
+#  ## Make sure all categorical adjustment variables are coded as factors or characters
+#  ## 'Sex' is already coded as a character
+#  
+#  phenodataframe$Parity<-as.factor(phenodataframe$Parity)
+#  phenodataframe$MaternalEd<-as.factor(phenodataframe$MaternalEd)
+#  phenodataframe$Smoke<-as.factor(phenodataframe$Smoke)
+#  phenodataframe$Ethnic<-as.factor(phenodataframe$Ethnic)
+#  
+
+## ----eval=FALSE---------------------------------------------------------------
+#  
+#  for (i in 1:nrow(modelstorun)){
+#  
+#    cat("Outcome:",modelstorun$varofinterest[i],"\n")
+#    tempresults<-dataAnalysis(phenofinal=phenodataframe,
+#                    betafinal=processedOut$processedBetas[1:100,], ## restricting to first 100 loci
+#                    array="450K",
+#                    maxit=100,
+#                    Omega=processedOut$Omega,
+#                    vartype=modelstorun$vartype[i],
+#                    varofinterest=modelstorun$varofinterest[i],
+#                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI","Ethnic"),
+#                    StratifyTable1=FALSE,
+#                    StratifyTable1var=NULL,
+#                    adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI","Ethnic"),
+#                    RunUnadjusted=TRUE,
+#                    RunAdjusted=TRUE,
+#                    RunCellTypeAdjusted=TRUE,
+#                    RunSexSpecific=TRUE,
+#                    RestrictToSubset=FALSE,
+#                    RestrictionVar=NULL,
+#                    RestrictToIndicator=NULL,
+#                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                    savelog=TRUE,
+#                    cohort="HEBC",analysisdate="20210103",analysisname="main")
+#  
+#  }
+#  
+
+## ----eval=FALSE---------------------------------------------------------------
+#  for (i in 1:nrow(modelstorun)){
+#  
+#    cat("Outcome:",modelstorun$varofinterest[i],"\n")
+#    tempresults<-dataAnalysis(phenofinal=phenodataframe,
+#                    betafinal=processedOut$processedBetas,
+#                    array="450K",
+#                    maxit=100,
+#                    Omega=processedOut$Omega,
+#                    vartype=modelstorun$vartype[i],
+#                    varofinterest=modelstorun$varofinterest[i],
+#                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI","Ethnic"),
+#                    StratifyTable1=FALSE,
+#                    StratifyTable1var=NULL,
+#                    adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI","Ethnic"),
+#                    RunUnadjusted=TRUE,
+#                    RunAdjusted=TRUE,
+#                    RunCellTypeAdjusted=TRUE,
+#                    RunSexSpecific=TRUE,
+#                    RestrictToSubset=FALSE,
+#                    RestrictionVar=NULL,
+#                    RestrictToIndicator=NULL,
+#                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                    savelog=TRUE,
+#                    cohort="HEBC",analysisdate="20210103")
+#  
+#      tempresultsNonHispanicWhite<-dataAnalysis(phenofinal=phenodataframe,
+#                    betafinal=processedOut$processedBetas,
+#                    array="450K",
+#                    maxit=100,
+#                    Omega=processedOut$Omega,
+#                    vartype=modelstorun$vartype[i],
+#                    varofinterest=modelstorun$varofinterest[i],
+#                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI"),
+#                    StratifyTable1=FALSE,
+#                    StratifyTable1var=NULL,
+#                    adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI"),
+#                    RunUnadjusted=TRUE,
+#                    RunAdjusted=TRUE,
+#                    RunCellTypeAdjusted=TRUE,
+#                    RunSexSpecific=TRUE,
+#                    RestrictToSubset=TRUE,
+#                    RestrictionVar="Ethnic",
+#                    RestrictToIndicator="1",
+#                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                    savelog=TRUE,
+#                    cohort="HEBC",analysisdate="20210103",analysisname="main")
+#  
+#  }
+#  
+
+## ----eval=FALSE---------------------------------------------------------------
+#  
+#  for (i in 1:nrow(modelstorun)){
+#  
+#    cat("Outcome:",modelstorun$varofinterest[i],"\n")
+#    tempresults<-dataAnalysis(phenofinal=phenodataframe,
+#                    betafinal=processedOut$processedBetas,
+#                    array="450K",
+#                    maxit=100,
+#                    Omega=processedOut$Omega,
+#                    vartype=modelstorun$vartype[i],
+#                    varofinterest=modelstorun$varofinterest[i],
+#                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI"),
+#                    StratifyTable1=FALSE,
+#                    StratifyTable1var=NULL,
+#                    adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+#                                     "Smoke","preBMI"),
+#                    RunUnadjusted=TRUE,
+#                    RunAdjusted=TRUE,
+#                    RunCellTypeAdjusted=TRUE,
+#                    RunSexSpecific=TRUE,
+#                    RestrictToSubset=FALSE,
+#                    RestrictionVar=NULL,
+#                    RestrictToIndicator=NULL,
+#                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                    savelog=TRUE,
+#                    cohort="HEBC",analysisdate="20210103",analysisname="main")
+#  
+#  }
+#  
+
