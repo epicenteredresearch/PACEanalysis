@@ -1,0 +1,321 @@
+---
+title: "R Code for Birth Size Analysis"
+output: 
+  html_document:
+    theme: cerulean 
+    highlight: haddock
+    toc: true
+    toc_depth: 4
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+vignette: >
+  %\VignetteIndexEntry{Example Analysis of Placenta DNA Methylation Microarray Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+### Loading the IDAT files and performing exploratory data analysis
+
+This part of the analysis can be used for multiple downstream site-specific analyses.
+
+#### Installing the PACEanalysis package
+
+First need to install required packages if you don't have them already 
+
+```{r eval=FALSE}
+
+## First need to install required packages if you don't have them already
+install.packages(c("ggplot2","gplots","reshape","RPMM","RefFreeEWAS","pvclust","heatmap.plus",
+                   "GGally","Hmisc","MASS","sandwich", "lmtest","plyr","remotes"))
+remotes::install_github("ki-tools/growthstandards") 
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(c("minfi","sva","sesame","wateRmelon","EpiDISH",
+                       "IlluminaHumanMethylationEPICmanifest",
+                       "IlluminaHumanMethylation450kmanifest",
+                       "IlluminaHumanMethylation450kanno.ilmn12.hg19",
+                       "IlluminaHumanMethylationEPICanno.ilm10b4.hg19",
+                       "FlowSorted.CordBlood.450k",
+                       "FlowSorted.Blood.450k"))
+
+## Need to then install package, specifying path to the source package
+install.packages("F:\\PACE\\PACEanalysis_0.1.0.tar.gz",
+                 repos = NULL, type="source")
+
+```
+
+#### Attaching package and running the first functions
+
+Extensive details regarding the input arguments and outputs for these functions are provided in the function documentation. The function documentation can be viewed after attaching the package (i.e. library(PACEanalysis)), and entering ? followed by the function name in your R console, e.g. ?loadingSamples
+
+```{r eval=FALSE}
+## Attach package
+library(PACEanalysis)
+
+setwd("F:\\PACE\\Birthweight-placenta")
+allphenodata<-read.csv("All_Pheno_and_Basenames.csv",header=TRUE)
+
+## If the data.frame you are going to specify as PhenoData does not include 
+## the column "Basename", you will need to also load a data.frame you are
+## going to specify for the SamplePlacement argument. PhenoData and SamplePlacement
+## are merged on the column name specified by the IDlink argument
+
+exampledat<-loadingSamples(SamplePlacement=NULL,PhenoData=allphenodata,IDlink="ID",
+                  BWTvar="BWT",BATCHvar="Study",
+                  SEXvar="GENDER_A",FemaleInd="1",MaleInd="2",
+                  ETHNICvar="ETHNIC",GESTvar="gestAge",
+                  BIRTHLENGTHvar="BirthLength",HEADCIRCUMvar=NULL,
+                  IDATdir="H:\\UCLA\\PACE\\Birthweight-placenta\\IDATfiles",
+                  destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+                  savelog=TRUE,
+                  cohort="HEBC",analysisdate="20201229")
+
+EDAresults<-ExploratoryDataAnalysis(RGset=exampledat,
+                  globalvarexplore=c("BWT","Sex"),
+                  destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+                  savelog=TRUE,
+                  cohort="HEBC",analysisdate="20201229")
+```
+
+
+#### Examining the Exploratory Data Analysis
+
+Before moving on to the next stage, check out the figures and csv files in the new "EDA" subfolder created by the function 'ExploratoryDataAnalysis'. As noted in the function documentation, output includes: 
+
+- red/green signal intensities (are their any low outliers?)
+
+- distribution of beta-values across all sites
+
+- heatmap of chrY (used to identify sex mix-ups)
+
+- signal intensities on X and Y chromosomes (used to identify sex mix-ups)
+
+- dendogram of the SNPs on the array (to identify possible sample replications or appraise relatedness)
+
+- scatterplot of first two PCs
+
+- boxplots of batch and other characteristics (if indicated) vs the top principle components
+
+- csv file of suggested probes to remove based on the percent of samples that failed for that probe (see function details)
+
+- csv file of suggested samples to potentially remove based on evidence of sex mix-ups, a high proportion of failed probes for that sample, or unintentional replicates based on clustering of SNP probes (see dendogram of the SNPs on the array).
+
+The function also returns a list that includes:  
+
+- *SamplestoRemove* : A character vector of Basenames to exclude based on evidence of sex mix-ups, or a high proportion of failed probes for that sample. This vector does not the suspected unintentional replicates; we suggest users check the SNP dendogram to evaluate this themselves.
+
+- *ProbestoRemove* : A character vector of CpGIDs to exclude based on the exploratory data analysis
+
+- *DetectionPval* : A matrix used to mask methylation values with a poor detection p-value (p>0.05); NA if poor detection, 1 otherwise
+
+### Pre-processing the data
+
+This part of the analysis can similarly be used for multiple downstream site-specific analyses because the data pre-processing does not depend on the exposure of interest. As noted in the function documentation, there are a few options for estimating cell composition, including reference-based methods for blood, cord blood, and placenta. The default is a reference-free based option (see function documentation for full details). To adjust for batch effects using ComBat, the pData for the specified RGset argument must include the column 'Batch'
+
+```{r eval=FALSE}
+
+processedOut<-preprocessingofData(RGset=exampledat,
+                  SamplestoRemove=EDAresults$SamplestoRemove,
+                  ProbestoRemove=EDAresults$ProbestoRemove,
+                  DetectionPvals=EDAresults$DetectionPval,
+                  destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+                  compositeCellType="RefFree",
+                  KchooseManual=NULL,
+                  savelog=TRUE,
+                  cohort="HEBC",analysisdate="20201229")
+
+```
+
+#### Further quality checking the data
+
+If using a reference-free method to estimate Omega (matrix of cell composition estimates), examine OutlierScreening plots generated by this function to ensure no extreme outliers are being generated. If you see extreme outliers driving the number of cell types, reduce Kchoose value by 1 using the argument KchooseManual, re-run the function preprocessingofData, and re-examine outlier plots. Reduce KchooseManual until extreme outliers are gone. This function will also generate figures (PDFs/PNGs) of associations between top PCs and indicators of batch before and after ComBat (if an indicator for batch was included in the dataset).
+
+### Site-specific associations with exposure of interest
+
+This stage of the analysis is specific to the chosen exposure and the specified adjustment variables. Below is the code for all of the analyses to run for the birth size project. Please be sure to update the cohort and date information in the below code for your analysis, as well as the destination path. Finally, be sure to update the column names of the exposure/outcome(s) of interest, the adjustment variables, and the table 1 variables. These should correspond to column names in the dataframe specified in the phenofinal argument of the dataAnalysis function. 
+
+As noted in our analysis plan, if any of the categorical variables below have less than 10 individuals in one of the categories, please let us know and we can decide whether to combine categories or restrict the analysis. In the case of ancestry, if there are more than two ancestry categories in your cohort with less than 10 individuals, we will discuss combining these categories into one “other” classification.  If you don’t have one of these variables, let us know, and we can discuss the best approach to take with your data. 
+
+Make sure that all categorical adjustment variables are coded as a factor; if they are coded numerically, the function will assume to code them as continuous adjustment variables. 
+
+```{r eval=FALSE}
+
+## If you closed prior R session, you can load list of pre-processed objects 
+## that is automatically saved by the preprocessingofData function
+
+setwd("H:\\UCLA\\PACE\\Birthweight-placenta\\HEBC_20201229_Output")
+load("HEBC_20201229_Preprocessed.RData")
+
+phenodataframe<-as.data.frame(pData(processedOut$mset))
+phenodataframe$LBWbin<-ifelse(phenodataframe$BWT<2500,1,0)
+phenodataframe$HBWbin<-ifelse(phenodataframe$BWT>4000,1,0)
+
+modelstorun<-data.frame(varofinterest=c("BWT","LBWbin","HBWbin","BirthLength",
+                                        "WeightLengthRatio","HeadCircum"))
+modelstorun$varofinterest<-as.character(modelstorun$varofinterest)
+modelstorun$vartype<-"OutcomeCont"
+modelstorun$vartype[modelstorun$varofinterest %in% c("LBWbin","HBWbin")]<-"OutcomeBin"
+
+## You can reduce this dataframe to whatever variables you have.
+## For example, if you only have birthweight, you would specify:
+## modelstorun<-data.frame(varofinterest=c("BWT","LBWbin","HBWbin"))
+
+## Make sure that you have sufficient numbers of samples between categories 
+## of exposure/outcome of interest as well as adjustment variables; 
+## you are assumed to have at least 10
+
+table(phenodataframe$LBWbin)
+table(phenodataframe$HBWbin)
+table(phenodataframe$Sex)
+table(phenodataframe$Parity)
+table(phenodataframe$MaternalEd)
+table(phenodataframe$Smoke)
+table(phenodataframe$Ethnic)
+
+## Make sure all categorical adjustment variables are coded as factors or characters
+## 'Sex' is already coded as a character
+
+phenodataframe$Parity<-as.factor(phenodataframe$Parity)
+phenodataframe$MaternalEd<-as.factor(phenodataframe$MaternalEd)
+phenodataframe$Smoke<-as.factor(phenodataframe$Smoke)
+phenodataframe$Ethnic<-as.factor(phenodataframe$Ethnic)
+
+```
+
+#### Quick check to make sure the function runs in your cohort
+
+Given the modeling approaches used, the dataAnalysis function requires a good deal of time to run. We recommend first checking whether the function runs on a relatively small subset of sites (i.e. 100 CpG loci). If you encounter any issues, please let us know. If not, proceed to the next step.
+
+```{r eval=FALSE}
+
+for (i in 1:nrow(modelstorun)){
+  
+  cat("Outcome:",modelstorun$varofinterest[i],"\n")
+  tempresults<-dataAnalysis(phenofinal=phenodataframe,
+                  betafinal=processedOut$processedBetas[1:100,], ## restricting to first 100 loci
+                  array="450K",
+                  maxit=100,
+                  Omega=processedOut$Omega,
+                  vartype=modelstorun$vartype[i],
+                  varofinterest=modelstorun$varofinterest[i],
+                  Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI","Ethnic"),
+                  StratifyTable1=FALSE,
+                  StratifyTable1var=NULL,
+                  adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI","Ethnic"),
+                  RunUnadjusted=TRUE,
+                  RunAdjusted=TRUE,
+                  RunCellTypeAdjusted=TRUE,
+                  RunSexSpecific=TRUE,
+                  RestrictToSubset=FALSE,
+                  RestrictionVar=NULL,
+                  RestrictToIndicator=NULL,
+                  destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+                  savelog=TRUE,
+                  cohort="HEBC",analysisdate="20210103",analysisname="main")
+  
+}
+
+```
+
+
+#### Final Models: If multiple race/ethnicities in cohort
+
+If you have multiple race/ethnicities in your cohort, run the below code. Be sure to update IndicatorforEthnicity to whatever is appropriate for your cohort. For example, if one of your race/ethnicity categories is "White" for individuals of European descent, use that instead of "1". 
+
+```{r eval=FALSE}
+for (i in 1:nrow(modelstorun)){
+  
+  cat("Outcome:",modelstorun$varofinterest[i],"\n")
+  tempresults<-dataAnalysis(phenofinal=phenodataframe,
+                  betafinal=processedOut$processedBetas,
+                  array="450K",
+                  maxit=100,
+                  Omega=processedOut$Omega,
+                  vartype=modelstorun$vartype[i],
+                  varofinterest=modelstorun$varofinterest[i],
+                  Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI","Ethnic"),
+                  StratifyTable1=FALSE,
+                  StratifyTable1var=NULL,
+                  adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI","Ethnic"),
+                  RunUnadjusted=TRUE,
+                  RunAdjusted=TRUE,
+                  RunCellTypeAdjusted=TRUE,
+                  RunSexSpecific=TRUE,
+                  RestrictToSubset=FALSE,
+                  RestrictionVar=NULL,
+                  RestrictToIndicator=NULL,
+                  destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+                  savelog=TRUE,
+                  cohort="HEBC",analysisdate="20210103")
+  
+    tempresultsNonHispanicWhite<-dataAnalysis(phenofinal=phenodataframe,
+                  betafinal=processedOut$processedBetas,
+                  array="450K",
+                  maxit=100,
+                  Omega=processedOut$Omega,
+                  vartype=modelstorun$vartype[i],
+                  varofinterest=modelstorun$varofinterest[i],
+                  Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI"),
+                  StratifyTable1=FALSE,
+                  StratifyTable1var=NULL,
+                  adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI"),
+                  RunUnadjusted=TRUE,
+                  RunAdjusted=TRUE,
+                  RunCellTypeAdjusted=TRUE,
+                  RunSexSpecific=TRUE,
+                  RestrictToSubset=TRUE,
+                  RestrictionVar="Ethnic",
+                  RestrictToIndicator="1",
+                  destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+                  savelog=TRUE,
+                  cohort="HEBC",analysisdate="20210103",analysisname="main")
+  
+}
+
+```
+
+#### Final Models: If cohort is made up of one race/ethnicity
+
+If you only have individuals of European descent in your cohort, run this instead:
+
+```{r eval=FALSE}
+
+for (i in 1:nrow(modelstorun)){
+  
+  cat("Outcome:",modelstorun$varofinterest[i],"\n")
+  tempresults<-dataAnalysis(phenofinal=phenodataframe,
+                  betafinal=processedOut$processedBetas,
+                  array="450K",
+                  maxit=100,
+                  Omega=processedOut$Omega,
+                  vartype=modelstorun$vartype[i],
+                  varofinterest=modelstorun$varofinterest[i],
+                  Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI"),
+                  StratifyTable1=FALSE,
+                  StratifyTable1var=NULL,
+                  adjustmentvariables=c("Gestage","Sex","Age","Parity","MaternalEd",
+                                   "Smoke","preBMI"),
+                  RunUnadjusted=TRUE,
+                  RunAdjusted=TRUE,
+                  RunCellTypeAdjusted=TRUE,
+                  RunSexSpecific=TRUE,
+                  RestrictToSubset=FALSE,
+                  RestrictionVar=NULL,
+                  RestrictToIndicator=NULL,
+                  destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+                  savelog=TRUE,
+                  cohort="HEBC",analysisdate="20210103",analysisname="main")
+  
+}
+
+```
+
