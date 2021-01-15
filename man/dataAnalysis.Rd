@@ -131,7 +131,7 @@ sensitivity analyses}
 \value{
 Outputs a list of data frames with the site-specific association
  results. Also creates a new folder in the Output folder for the specified
- exposure variable. The folder includes: \enumerate{\item Descriptive
+ exposure/outcome variable. The folder includes: \enumerate{\item Descriptive
  statistics of cohort (Table 1; csv file) \item Figures (PDFs/PNGs) of
  associations, including: \itemize{\item QQplot for each analysis \item
  Volcano plot for each analysis \item Scatterplot for the 20 most significant
