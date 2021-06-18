@@ -5,8 +5,8 @@
 \title{Analyze the Data}
 \usage{
 dataAnalysis(
-  phenofinal = phenofinal,
-  betafinal = betafinal,
+  phenofinal = NULL,
+  betafinal = NULL,
   array = "EPIC",
   Table1vars = c("Age", "BMI", "Smoke", "Parity", "Sex", "Gestage", "BWT"),
   StratifyTable1 = FALSE,
@@ -19,15 +19,17 @@ dataAnalysis(
   RestrictToSubset = FALSE,
   RestrictionVar = NULL,
   RestrictToIndicator = NULL,
+  robust = TRUE,
   RunUnadjusted = TRUE,
   RunAdjusted = TRUE,
   RunCellTypeAdjusted = TRUE,
   RunSexSpecific = TRUE,
+  RunCellTypeInteract = TRUE,
   destinationfolder = NULL,
   savelog = TRUE,
-  cohort = cohort,
-  analysisdate = analysisdate,
-  analysisname = analysisname
+  cohort = NULL,
+  analysisdate = NULL,
+  analysisname = NULL
 )
 }
 \arguments{
@@ -99,6 +101,9 @@ RestrictionVar you would like to restrict the analysis to. This character
 string must equal one of the RestrictionVar categories. This argument is
 only required if RestrictToSubset = TRUE; default is NULL}
 
+\item{robust}{Logic statement (TRUE or FALSE), whether to run robust linear
+regressions. The default is TRUE}
+
 \item{RunUnadjusted}{Run unadjusted models? Logic statement (TRUE or FALSE),
 default = TRUE}
 
@@ -110,6 +115,10 @@ Logic statement (TRUE or FALSE), default = TRUE}
 
 \item{RunSexSpecific}{Run models stratifying by infant sex? Logic statement
 (TRUE or FALSE), default = TRUE}
+
+\item{RunCellTypeInteract}{Whether to run CellDMC to identify the specific
+cell type(s) driving the differential methylation. Logic statement (TRUE or
+FALSE), default = TRUE}
 
 \item{destinationfolder}{A character string indicating the location where
 files should be saved, e.g. "C:\\Home\\PACE\\BirthSize"}
@@ -149,20 +158,30 @@ Data analysis steps include: \enumerate{ \item Create a Table 1
  variables, and batch (if included)  \item Perform association analysis
  between variable of interest and each CpG site individually. If vartype is
  "ExposureCont", "ExposureCat", or "OutcomeCont", the association is
- estimated using robust linear regression modelling (rlm() function in R). If
- vartype is "OutcomeBin", a logistic regression is used to estimate the
- association (glm(family="binomial")). Analyses performed include: \itemize{
- \item Unadjusted analysis \item Analysis adjusting for specified adjustment
- variables \item Analysis adjusting for specified adjustment variables and
- estimated cell composition \item If there are at least 10 female infants in
- the dataset, analysis adjusting for specified adjustment variables among the
- female infants \item If there are at least 10 female infants in the dataset,
- analysis adjusting for specified adjustment variables and estimated cell
- composition among the female infants \item If there are at least 10 male
+ estimated using linear regression modelling (if robust=TRUE, using the rlm()
+ function in R; otherwise, using lm()). If vartype is "OutcomeBin", a
+ logistic regression is used to estimate the association
+ (glm(family="binomial")). Analyses performed include: \itemize{ \item
+ Unadjusted analysis if RunUnadjusted=TRUE \item Analysis adjusting for
+ specified adjustment variables if RunAdjusted=TRUE \item Analysis adjusting
+ for specified adjustment variables and estimated cell composition if
+ RunCellTypeAdjusted=TRUE \item If RunSexSpecific=TRUE, RunUnadjusted=TRUE,
+ and there are at least 10 female infants in the dataset, unadjusted analysis
+ among the female infants \item If RunSexSpecific=TRUE, RunAdjusted=TRUE, and
+ there are at least 10 female infants in the dataset, analysis adjusting for
+ specified adjustment variables among the female infants \item If
+ RunSexSpecific=TRUE, RunCellTypeAdjusted=TRUE, and there are at least 10
+ female infants in the dataset, analysis adjusting for specified adjustment
+ variables and estimated cell composition among the female infants \item If
+ RunSexSpecific=TRUE, RunUnadjusted=TRUE, and there are at least 10 male
+ infants in the dataset, unadjusted analysis among the male infants \item If
+ RunSexSpecific=TRUE, RunAdjusted=TRUE, and there are at least 10 male
  infants in the dataset, analysis adjusting for specified adjustment
- variables among the male infants \item If there are more than 10 male
- infants in the dataset, analysis adjusting for specified adjustment
- variables and estimated cell composition among the male infants}  }
+ variables among the male infants \item If RunSexSpecific=TRUE,
+ RunCellTypeAdjusted=TRUE, and there are more than 10 male infants in the
+ dataset, analysis adjusting for specified adjustment variables and estimated
+ cell composition among the male infants \item If RunCellTypeInteract=TRUE,
+ output of CellDMC (from package EpiDISH) based on the adjusted model}  }
 }
 \examples{
 \dontrun{
@@ -178,10 +197,12 @@ allresults<-dataAnalysis(phenofinal=pData(processedOut$mset),
                         varofinterest="BWT",
                         adjustmentvariables=c("Age","Gestage"),
                         destinationfolder="H:/UCLA/PACE/Birthweight-placenta",
+                        robust=TRUE,
                         RunUnadjusted=TRUE,
                         RunAdjusted=TRUE,
                         RunCellTypeAdjusted=TRUE,
                         RunSexSpecific=TRUE,
+                        RunCellTypeInteract=TRUE,
                         RestrictToSubset=FALSE,
                         RestrictionVar=NULL,
                         RestrictToIndicator=NULL,

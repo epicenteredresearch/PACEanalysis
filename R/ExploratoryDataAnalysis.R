@@ -10,6 +10,14 @@
 #'@param globalvarexplore A vector of characteristic column names to explore in
 #'  association with the first 12 principle components. These column names must
 #'  be in the pData frame of the RGset specified by the RGset argument
+#'@param DetectionPvalMethod A character string indicating the detection p-value
+#'  method to use; options include: SeSAME method ("SeSAMe"; default) or
+#'  ewastools method ("ewastools").
+#'@param DetectionPvalCutoff a numeric value indicating the detection p-value
+#'  cut-off (default=0.05)
+#'@param minNbeads a numeric value indicating the minimum number of beads to
+#'  include a beta-value (default=0; a value of 0 corresponds to no filtering)
+#'@param FilterZeroIntensities a logic statement (TRUE/FALSE; default=FALSE).
 #'@param destinationfolder A character string indicating the location where
 #'  files should be saved, e.g. "C:\\Home\\PACE\\BirthSize"
 #'@param savelog logic; TRUE indicates to save a log of the functions run
@@ -25,33 +33,50 @@
 #'@return PDFs/PNGs of exploratory data analysis in "EDA" subfolder of "Output"
 #'  folder, including: red/green signal intensities, distribution of intensity
 #'  across all sites, heatmap of chrY, signal intensities on X and Y
-#'  chromosomes, dendogram of the SNPs on the array (to identify possible sample
-#'  replications or appraise relatedness), scatterplot of first two PCs,
-#'  boxplots of batch and other characteristics (if indicated) vs the top
-#'  principle components, csv file of suggested probes to remove based on the
-#'  percent of samples that failed for that probe (see function details), csv
-#'  file of suggested samples to potentially remove based on evidence of sex
-#'  mix-ups, a high proportion of failed probes for that sample, or
-#'  unintentional replicates based on clustering of SNP probes (see dendogram of
-#'  the SNPs on the array). Also returns a list that includes:
-#'  \item{SamplestoRemove}{A character vector of Basenames to exclude based on
-#'  evidence of sex mix-ups, or a high proportion of failed probes for that
-#'  sample. This vector does not the suspected unintentional replicates; we
-#'  suggest users check the SNP dendogram to evaluate this themselves.}
-#'  \item{ProbestoRemove}{A character vector of CpGIDs to exclude based on the
-#'  exploratory data analysis} \item{DetectionPval}{A matrix used to mask
-#'  methylation values with a poor detection p-value; NA if poor detection
-#'  p-value and 1 otherwise}
+#'  chromosomes, dendogram and heatmap of the SNPs on the array (to identify
+#'  possible sample replications or appraise relatedness), a heatmap of the
+#'  posterior probabilities that the SNP distribution is of the outlier
+#'  component, scatterplot of first two PCs, boxplots of batch and other
+#'  characteristics (if indicated) vs the top principle components, csv file of
+#'  suggested probes to remove based on the percent of samples that failed for
+#'  that probe (see function details), csv file of suggested samples to
+#'  potentially remove based on evidence of sex mix-ups, a high proportion of
+#'  failed probes for that sample, indication of sample contamination, low
+#'  global methylated or unmethylated intensities, or unintentional replicates
+#'  based on clustering of SNP probes (see dendogram and heatmap of the SNPs on
+#'  the array). Also returns a list that includes: \item{SamplestoRemove}{A
+#'  character vector of Basenames to exclude based on evidence of sex mix-ups,
+#'  or a high proportion of failed probes for that sample. This vector does not
+#'  the suspected unintentional replicates; we suggest users check the SNP
+#'  dendogram to evaluate this themselves.} \item{ProbestoRemove}{A character
+#'  vector of CpGIDs to exclude based on the exploratory data analysis}
+#'  \item{DetectionPval}{A matrix of detection p-values}
+#'  \item{IndicatorGoodIntensity}{A matrix used to mask methylation values with
+#'  a poor intensity value based on the number of beads (if minNbeads is larger
+#'  than zero) and intensity values of zero (if FilterZeroIntensities=TRUE); NA
+#'  if poor intensity value and 1 otherwise}\item{logOddsContamin}{The average
+#'  log odds from the SNP posterior probabilities from the outlier component;
+#'  capturing how irregular the SNP beta-values deviate from the ideal trimodal
+#'  distribution. Values greater than -4 are suggest potentially contaminated
+#'  samples}
 #'@examples
 #'\dontrun{
 #'EDAtrying<-ExploratoryDataAnalysis(RGset=exampledat,
 #'                                   globalvarexplore=c("Sex","BWT"),
+#'                                   DetectionPvalMethod="SeSAMe",
+#'                                   DetectionPvalCutoff=0.05,
+#'                                   minNbeads=3,
+#'                                   FilterZeroIntensities=FALSE,
 #'                                   destinationfolder="H:/UCLA/PACE/Birthweight-placenta",
 #'                                   savelog=TRUE,
 #'                                   cohort="HEBC",analysisdate="20200710")
 #'}
 
-ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
+ExploratoryDataAnalysis<-function(RGset=NULL,globalvarexplore=NULL,
+                                  DetectionPvalMethod=NULL,
+                                  DetectionPvalCutoff=0.05,
+                                  minNbeads=0,
+                                  FilterZeroIntensities=FALSE,
                                   destinationfolder=NULL,
                                   savelog=TRUE,cohort=NULL,analysisdate=NULL){
 
@@ -72,9 +97,15 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
     if(FALSE %in% (globalvarexplore %in% colnames(pData(RGset)))) stop("One of the variables in 'globalvarexplore' is not in the dataset")
   }
 
+  ## sesame functions have been updated, need to check have newest version
+  temparguments<-formals(sesame::pOOBAH)
+  if(!("return.pval" %in% names(temparguments))) stop("the sesame package needs to be updated before running this function")
+
+  ## other input checks
   if(!("Sex" %in% colnames(pData(RGset)))) stop("Variable 'Sex' is required and not in the dataset; see function arguments for specification")
   if(!("ID" %in% colnames(pData(RGset)))) stop("Variable 'ID' is required and not in the dataset; see function arguments for specification")
   if(!("Basename" %in% colnames(pData(RGset)))) stop("Variable 'Basename' is required and not in the dataset")
+  if(!(DetectionPvalMethod %in% c("SeSAMe","ewastools"))) stop("Detection p-value method must be  'SeSAMe' or 'ewastools'")
 
   if(savelog){
 
@@ -87,6 +118,13 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
 
   }
 
+  ## Filtering bad intensities based on the number of beads and zero intensities
+  tempfilteringRGset <- probeFiltering(RGset,cutbead=minNbeads,zeroint=FilterZeroIntensities)
+  indicatorgoodintensity<-getBeta(tempfilteringRGset)
+  indicatorgoodintensity[!is.na(indicatorgoodintensity)]<-1
+
+  RGset<-as(RGset,"RGChannelSet")
+
   ## Getting Raw Betas
   rawbetas<-preprocessRaw(RGset)
   justbetas<-getBeta(rawbetas)
@@ -97,9 +135,17 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
   Mset.norm = preprocessFunnorm(RGset, sex = NULL, bgCorr = T, dyeCorr = T, nPCs = 2, verbose = TRUE)
   justbetas.norm<-getBeta(Mset.norm)
 
+  ## Characterizing the log2 Median Unmethylated and Methylated Intensities
   png(paste(cohort,"_",analysisdate,"_Methyl_and_Unmethyl_Signal_Intensities.png",sep=""))
   plotQC(qc)
   dev.off()
+
+  tempmeds <- (qc$mMed + qc$uMed)/2
+  whichBad <- which((tempmeds < 10.5))
+  gettingmedianintensities<-data.frame(Basename=pData(rawbetas)$Basename,UnmethylMedInt=qc$uMed,MethylMedInt=qc$mMed,IntensityCat="Good")
+  gettingmedianintensities$IntensityCat<-as.character(gettingmedianintensities$IntensityCat)
+  gettingmedianintensities$Basename<-as.character(gettingmedianintensities$Basename)
+  gettingmedianintensities$IntensityCat[which(tempmeds < 10.5)]<-"Bad"
 
   ## Plotting SNP Data
   SNPs<- getSnpBeta(RGset)
@@ -110,9 +156,18 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
   clusters <- pvclust::pvclust(SNPs, method.dist="correlation",
                       method.hclust="average", nboot=1000)
 
-  png(paste(cohort,"_",analysisdate,"_Dendrogram_based_on_Array_SNPs.png",sep=""))
+  pdf(paste(cohort,"_",analysisdate,"_Dendrogram_based_on_Array_SNPs.pdf",sep=""), width = ncol(SNPs)*0.6, height = 8)
   plot(clusters,main="Dendrogram based on Array SNPs")
   pvclust::pvrect(clusters)
+  dev.off()
+
+  hmcols <- gplots::colorpanel(2750, "yellow", "black", "blue")
+  pdf(paste(cohort,"_",analysisdate,"_Heatmap_of_SNPs.pdf",sep=""),width = ncol(SNPs)*0.2, height = 10)
+  gplots::heatmap.2(SNPs, key = FALSE, trace = "none", dendrogram = "column",
+            lwid = c(0.5, 8), lhei = c(2, 7),srtCol=45,margins=c(6,0.5),
+            col = hmcols,
+            labCol = pData(rawbetas)$Basename,
+            labRow = NA)
   dev.off()
 
   tempclusters<-pvclust::pvpick(clusters)$clusters
@@ -125,6 +180,40 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
     tempclusters$Basename<-as.character(tempclusters$Basename)
     tempclusters<-unique(tempclusters)
   }
+
+  ## Evaluating potential contamination based on SNP data
+  contaminationSNPs<-ewastools::call_genotypes(SNPs, learn=FALSE)
+
+  outlierprob <- contaminationSNPs$outliers
+  colnames(outlierprob)<-colnames(SNPs)
+  rownames(outlierprob)<-rownames(SNPs)
+
+  outlierprob[outlierprob==0]<-0.0001 ## to prevent -Inf values
+  outlierprob[outlierprob==1]<-0.9999 ## to prevent Inf values
+
+  log_odds = outlierprob/(1 - outlierprob)
+  meanlogodds = colMeans(log2(log_odds), na.rm = TRUE)
+  meanlogoddsBin<-ifelse(meanlogodds>(-4),"Bad","Good") ## using >-4 as the suggested cut-off
+  contaminationdat<-data.frame(Basename=sampleNames(RGset),Contamination=meanlogoddsBin,Meanlog2oddsContamination=meanlogodds)
+
+  ## adding a color indicator that sample is potentially poor quality
+  colcolorsBad<-as.factor(meanlogoddsBin)
+  levels(colcolorsBad)<-c("#9e9ac8","#3f007d")
+  colcolorsBad<-as.character(colcolorsBad)
+  allcolcolors<-cbind(colcolorsBad,colcolorsBad)
+  colnames(allcolcolors)<-NULL
+
+  pdf(paste(cohort,"_",analysisdate,"_Heatmap_SNP_Outliers_Suggesting_Contamination.pdf",sep=""),width = ncol(SNPs)*0.2, height = 10)
+  heatmap.plus::heatmap.plus(outlierprob,
+                             distfun = dist,
+                             hclustfun = hclust,
+                             na.rm=TRUE,
+                             scale="none",
+                             margins=c(10,5),
+                             ColSideColors=allcolcolors,
+                             main="Posterior Probabilities")
+  dev.off()
+
 
   annotdat<-as.data.frame(getAnnotation(Mset.norm))
   annotdat$chr<-as.character(annotdat$chr)
@@ -233,14 +322,14 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
   SexChr<-Mset.norm[which(getAnnotation(Mset.norm)$chr=="chrY"),]
   methyldata<-getBeta(SexChr)
 
-  png(paste(cohort,"_",analysisdate,"_Heatmap_of_Y_Chromosome_by_Sex.png",sep=""))
+  pdf(paste(cohort,"_",analysisdate,"_Heatmap_of_Y_Chromosome_by_Sex.pdf",sep=""), width = ncol(methyldata)*0.2, height = 10)
   heatmap.plus::heatmap.plus(methyldata,
                distfun = dist,
                hclustfun = hclust,
                na.rm=TRUE,
                scale="none",
                labRow=NA,
-               labCol=pData(SexChr)$Sex,
+               labCol=pData(SexChr)$Basename,
                Rowv=NA,
                col=hmcols,
                ColSideColors=allcolcolors,
@@ -275,31 +364,52 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
 
   dev.off()
 
-  cat("Using sesame for detection p-values...","\n")
-  ## Use sesame to calculate the detection p-values
-  listsamples<-sesame::RGChannelSetToSigSets(RGset)
-  pOOBAHpvals<-lapply(listsamples,function(sample) sample@extra$pvals[["pOOBAH"]])
-  pOOBAHpvals<-do.call(cbind,pOOBAHpvals)
-  pOOBAHpvals[pOOBAHpvals>0.05]<-NA
+  cat("Calculating detection p-values...","\n")
+
+  if(DetectionPvalMethod=="SeSAMe") {
+    ## Use sesame to calculate the detection p-values
+    listsamples<-sesame::RGChannelSetToSigSets(RGset)
+    detectionpvals<-lapply(listsamples,function(sample) sesame::pOOBAH(sample, return.pval=TRUE))
+    # old approach: detectionpvals<-lapply(listsamples,function(sample) sample@extra$pvals[["pOOBAH"]])
+    detectionpvals<-do.call(cbind,detectionpvals)
+    detectionpvalssave<-detectionpvals
+    detectionpvals[detectionpvals>DetectionPvalCutoff]<-NA
+
+  }
+
+  if(DetectionPvalMethod=="ewastools"){
+
+    detectionpvals<-ewastools::detectionP.minfi(RGset)
+    detectionpvalssave<-detectionpvals
+    detectionpvals[detectionpvals>DetectionPvalCutoff]<-NA
+
+  }
+
+  ## Also filtering out bad intensity
+  ## Now will be NA if below detection p-value or bad intensity based on
+  ## the number of beads or intensity values of zero
+  overlapCpGsdetect<-intersect(rownames(indicatorgoodintensity),rownames(detectionpvals)) ## subset excludes the rs probes
+  detectionpvals<-detectionpvals[overlapCpGsdetect,]
+  indicatorgoodintensity<-indicatorgoodintensity[overlapCpGsdetect,colnames(detectionpvals)]
+  detectionpvals<-detectionpvals*indicatorgoodintensity
 
   ## Dropping probes that failed in at least 5% of the samples
-  numberfailedprobes<-apply(pOOBAHpvals,1,function(x) length(x[is.na(x)]))
-  prop.failedprobes<-numberfailedprobes/ncol(pOOBAHpvals)
+  numberfailedprobes<-apply(detectionpvals,1,function(x) length(x[is.na(x)]))
+  prop.failedprobes<-numberfailedprobes/ncol(detectionpvals)
   ProbestoRemove<-names(prop.failedprobes)[which(prop.failedprobes>0.05)]
 
-  ## Identify potential problem samples (poor detection p-values for > 5% of remaining probes)
+  ## Identify potential problem samples (poor intensity values for > 5% of remaining probes)
   ## First subsetting to the probes that did not fail in more than 5% of samples
 
   if(length(ProbestoRemove)>0){
-    pOOBAHpvals.temp<-pOOBAHpvals[!(rownames(pOOBAHpvals) %in% ProbestoRemove),]
+    detectionpvals.temp<-detectionpvals[!(rownames(detectionpvals) %in% ProbestoRemove),]
   } else {
-    pOOBAHpvals.temp<-pOOBAHpvals
+    detectionpvals.temp<-detectionpvals
   }
-  numberfailed<-apply(pOOBAHpvals.temp,2,function(x) length(x[is.na(x)]))
-  prop.failed<-numberfailed/nrow(pOOBAHpvals.temp)
+  numberfailed<-apply(detectionpvals.temp,2,function(x) length(x[is.na(x)]))
+  prop.failed<-numberfailed/nrow(detectionpvals.temp)
   BasenamesDetectionPval<-names(prop.failed)[which(prop.failed>0.05)]
-  cat("Samples with poor detection p-values for >5% of remaining probes","\n")
-  BasenamesDetectionPval
+  cat("Samples with poor intensity values for >5% of remaining probes:",BasenamesDetectionPval,"\n")
 
   ##Getting rid of poorly performing samples and probes
   SamplestoRemove<-c(SexMixupV2,SexMixupV1,BasenamesDetectionPval)
@@ -311,6 +421,8 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
   SamplestoRemove_Dataframe$Sex_Wrong[SamplestoRemove_Dataframe$Basename %in% SexMixupV1]<-"Yes"
   SamplestoRemove_Dataframe$Sex_Wrong[SamplestoRemove_Dataframe$Basename %in% SexMixupV2]<-"Yes"
   SamplestoRemove_Dataframe$TooManyFailedProbes[SamplestoRemove_Dataframe$Basename %in% BasenamesDetectionPval]<-"Yes"
+  SamplestoRemove_Dataframe<-merge(SamplestoRemove_Dataframe,contaminationdat,by="Basename")
+  SamplestoRemove_Dataframe<-merge(SamplestoRemove_Dataframe,gettingmedianintensities,by="Basename")
 
   if(nrow(tempclusters)>0){
     SamplestoRemove_Dataframe<-merge(tempclusters,SamplestoRemove_Dataframe,by="Basename",all.y=TRUE)
@@ -322,10 +434,8 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
     write.csv(ProbestoRemove_Dataframe, paste(cohort,"_",analysisdate,"_Recommended_Probes_to_Remove.csv",sep=""), na="NA",row.names = FALSE)
   }
 
-  DetectionPval<-pOOBAHpvals
-  DetectionPval[!is.na(DetectionPval)]<-1
   suggestedexclusions<-list(SamplestoRemove=SamplestoRemove,ProbestoRemove=ProbestoRemove,
-                            DetectionPval=DetectionPval)
+                            DetectionPval=detectionpvalssave,IndicatorGoodIntensity=indicatorgoodintensity,logOddsContamin=meanlogodds)
 
   if(savelog){
     sink()
@@ -334,4 +444,74 @@ ExploratoryDataAnalysis<-function(RGset=RGset,globalvarexplore=NULL,
 
   return(suggestedexclusions)
 
+}
+
+
+### From the DNAmArray R Package: https://github.com/molepi/DNAmArray
+
+probeFiltering <- function(RGset, cutbead=3, zeroint=TRUE, verbose=TRUE){
+
+  if(class(RGset) != "RGChannelSetExtended")
+    stop("RGset should be of class 'RGChannelSetExtended' in order to perform filtering on number of beads!")
+
+  ##Filter on number of beads
+  if(verbose)
+    cat("Filtering on number of beads... \n")
+
+  beadmat <- getNBeads(RGset)
+
+  idBeadmat <- beadmat < cutbead
+  ##beadmat[idBeadmat] <- NA
+
+  if(verbose)
+    cat("On average", round(100*sum(idBeadmat)/prod(dim(idBeadmat)), 2),"% of the probes (",nrow(idBeadmat),") have number of beads below", cutbead, "\n")
+
+  ##Filter on Red and Green intensity <1
+  if(zeroint) {
+    if(verbose)
+      cat("Filtering on zero intensities... \n")
+
+    Grn <- getGreen(RGset)
+    Red <- getRed(RGset)
+
+    ##determine if Grn and/or Red intensities of type II probes are <1
+    idT2 <- Grn[getProbeInfo(RGset, type = "II")$AddressA,] < 1 | Red[getProbeInfo(RGset, type = "II")$AddressA,] < 1
+
+    ##determine if either Grn or Red intensities of Type I probes are <1
+    idT1Grn <- Grn[c(getProbeInfo(RGset, type = "I-Green")$AddressA,
+                     getProbeInfo(RGset, type = "I-Green")$AddressB),] < 1
+
+    idT1Red <- Red[c(getProbeInfo(RGset, type = "I-Red")$AddressA,
+                     getProbeInfo(RGset, type = "I-Red")$AddressB),] < 1
+
+    if(verbose) {
+      cat("On average", round(100*sum(idT2)/prod(dim(idT2)), 3),"% of the Type II probes (",nrow(idT2),") have Red and/or Green intensity below 1 \n")
+      cat("On average", round(100*sum(idT1Grn)/prod(dim(idT1Grn)), 3),"% of the Type I probes (",nrow(idT1Grn),"), measured in Green channel, have intensity below 1 \n")
+      cat("On average", round(100*sum(idT1Red)/prod(dim(idT1Red)), 3),"% of the Type I probes (",nrow(idT1Red),"), measured in Red channel, have intensity below 1 \n")
+    }
+  }
+
+  ##combine all filtered results and set NA in Red and/or Green channels
+  Red[idBeadmat] <- Grn[idBeadmat] <- NA
+
+  if(zeroint) {
+    if(verbose){
+      cat("Set filtered probes in Red and/or Green channels to NA... \n")
+    }
+
+    for(i in 1:ncol(RGset)) {
+      if(verbose & i%%100 == 0)
+        cat("... done ",i," out of ",ncol(RGset)," ... \n")
+      idRed <- c(names(which(idT2[,i])), names(which(idT1Red[,i])))
+      midRed <- match(idRed, rownames(Red))
+      Red[midRed, i] <- NA
+      idGrn <- c(names(which(idT2[,i])), names(which(idT1Grn[,i])))
+      midGrn <- match(idGrn, rownames(Grn))
+      Grn[midGrn, i] <- NA
+    }
+  }
+
+  RGChannelSet(Green = Grn, Red = Red,
+               colData = colData(RGset),
+               annotation = annotation(RGset))
 }

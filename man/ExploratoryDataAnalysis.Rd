@@ -5,8 +5,12 @@
 \title{Exploratory Data Analysis}
 \usage{
 ExploratoryDataAnalysis(
-  RGset = RGset,
+  RGset = NULL,
   globalvarexplore = NULL,
+  DetectionPvalMethod = NULL,
+  DetectionPvalCutoff = 0.05,
+  minNbeads = 0,
+  FilterZeroIntensities = FALSE,
   destinationfolder = NULL,
   savelog = TRUE,
   cohort = NULL,
@@ -24,6 +28,18 @@ can only take three possible character values: 'Female', 'Male', or
 association with the first 12 principle components. These column names must
 be in the pData frame of the RGset specified by the RGset argument}
 
+\item{DetectionPvalMethod}{A character string indicating the detection p-value
+method to use; options include: SeSAME method ("SeSAMe"; default) or
+ewastools method ("ewastools").}
+
+\item{DetectionPvalCutoff}{a numeric value indicating the detection p-value
+cut-off (default=0.05)}
+
+\item{minNbeads}{a numeric value indicating the minimum number of beads to
+include a beta-value (default=0; a value of 0 corresponds to no filtering)}
+
+\item{FilterZeroIntensities}{a logic statement (TRUE/FALSE; default=FALSE).}
+
 \item{destinationfolder}{A character string indicating the location where
 files should be saved, e.g. "C:\\Home\\PACE\\BirthSize"}
 
@@ -40,23 +56,32 @@ run. Please specify in the form: YEARMONTHDAY, e.g. "20200205" for February
 PDFs/PNGs of exploratory data analysis in "EDA" subfolder of "Output"
  folder, including: red/green signal intensities, distribution of intensity
  across all sites, heatmap of chrY, signal intensities on X and Y
- chromosomes, dendogram of the SNPs on the array (to identify possible sample
- replications or appraise relatedness), scatterplot of first two PCs,
- boxplots of batch and other characteristics (if indicated) vs the top
- principle components, csv file of suggested probes to remove based on the
- percent of samples that failed for that probe (see function details), csv
- file of suggested samples to potentially remove based on evidence of sex
- mix-ups, a high proportion of failed probes for that sample, or
- unintentional replicates based on clustering of SNP probes (see dendogram of
- the SNPs on the array). Also returns a list that includes:
- \item{SamplestoRemove}{A character vector of Basenames to exclude based on
- evidence of sex mix-ups, or a high proportion of failed probes for that
- sample. This vector does not the suspected unintentional replicates; we
- suggest users check the SNP dendogram to evaluate this themselves.}
- \item{ProbestoRemove}{A character vector of CpGIDs to exclude based on the
- exploratory data analysis} \item{DetectionPval}{A matrix used to mask
- methylation values with a poor detection p-value; NA if poor detection
- p-value and 1 otherwise}
+ chromosomes, dendogram and heatmap of the SNPs on the array (to identify
+ possible sample replications or appraise relatedness), a heatmap of the
+ posterior probabilities that the SNP distribution is of the outlier
+ component, scatterplot of first two PCs, boxplots of batch and other
+ characteristics (if indicated) vs the top principle components, csv file of
+ suggested probes to remove based on the percent of samples that failed for
+ that probe (see function details), csv file of suggested samples to
+ potentially remove based on evidence of sex mix-ups, a high proportion of
+ failed probes for that sample, indication of sample contamination, low
+ global methylated or unmethylated intensities, or unintentional replicates
+ based on clustering of SNP probes (see dendogram and heatmap of the SNPs on
+ the array). Also returns a list that includes: \item{SamplestoRemove}{A
+ character vector of Basenames to exclude based on evidence of sex mix-ups,
+ or a high proportion of failed probes for that sample. This vector does not
+ the suspected unintentional replicates; we suggest users check the SNP
+ dendogram to evaluate this themselves.} \item{ProbestoRemove}{A character
+ vector of CpGIDs to exclude based on the exploratory data analysis}
+ \item{DetectionPval}{A matrix of detection p-values}
+ \item{IndicatorGoodIntensity}{A matrix used to mask methylation values with
+ a poor intensity value based on the number of beads (if minNbeads is larger
+ than zero) and intensity values of zero (if FilterZeroIntensities=TRUE); NA
+ if poor intensity value and 1 otherwise}\item{logOddsContamin}{The average
+ log odds from the SNP posterior probabilities from the outlier component;
+ capturing how irregular the SNP beta-values deviate from the ideal trimodal
+ distribution. Values greater than -4 are suggest potentially contaminated
+ samples}
 }
 \description{
 Exploratory data analysis to identify possible sample swaps and
@@ -72,6 +97,10 @@ The sesame package is used to calculate the detection p-values.
 \dontrun{
 EDAtrying<-ExploratoryDataAnalysis(RGset=exampledat,
                                   globalvarexplore=c("Sex","BWT"),
+                                  DetectionPvalMethod="SeSAMe",
+                                  DetectionPvalCutoff=0.05,
+                                  minNbeads=3,
+                                  FilterZeroIntensities=FALSE,
                                   destinationfolder="H:/UCLA/PACE/Birthweight-placenta",
                                   savelog=TRUE,
                                   cohort="HEBC",analysisdate="20200710")

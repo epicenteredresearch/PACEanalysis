@@ -49,6 +49,8 @@
 #'  outcome of interest (e.g. "BWT"). The column name must correspond to a
 #'  column name in the pData DataFrame of the GenomicRatioSet; see the function
 #'  loadingSamples for the new column names
+#'@param robust Logic statement (TRUE or FALSE), whether to run robust linear
+#'  regressions. The default is TRUE
 #'@param maxit If running robust linear regression models, the maximum number of
 #'  iterations (default=100)
 #'@param adjustmentvariables A character vector of variable column names to
@@ -63,6 +65,9 @@
 #'  Logic statement (TRUE or FALSE), default = TRUE
 #'@param RunSexSpecific Run models stratifying by infant sex? Logic statement
 #'  (TRUE or FALSE), default = TRUE
+#'@param RunCellTypeInteract Whether to run CellDMC to identify the specific
+#'  cell type(s) driving the differential methylation. Logic statement (TRUE or
+#'  FALSE), default = TRUE
 #'@param destinationfolder A character string indicating the location where
 #'  files should be saved, e.g. "C:\\Home\\PACE\\BirthSize"
 #'@param savelog logic; TRUE indicates to save a log of the functions run
@@ -81,20 +86,30 @@
 #'  variables, and batch (if included)  \item Perform association analysis
 #'  between variable of interest and each CpG site individually. If vartype is
 #'  "ExposureCont", "ExposureCat", or "OutcomeCont", the association is
-#'  estimated using robust linear regression modelling (rlm() function in R). If
-#'  vartype is "OutcomeBin", a logistic regression is used to estimate the
-#'  association (glm(family="binomial")). Analyses performed include: \itemize{
-#'  \item Unadjusted analysis \item Analysis adjusting for specified adjustment
-#'  variables \item Analysis adjusting for specified adjustment variables and
-#'  estimated cell composition \item If there are at least 10 female infants in
-#'  the dataset, analysis adjusting for specified adjustment variables among the
-#'  female infants \item If there are at least 10 female infants in the dataset,
-#'  analysis adjusting for specified adjustment variables and estimated cell
-#'  composition among the female infants \item If there are at least 10 male
+#'  estimated using linear regression modelling (if robust=TRUE, using the rlm()
+#'  function in R; otherwise, using lm()). If vartype is "OutcomeBin", a
+#'  logistic regression is used to estimate the association
+#'  (glm(family="binomial")). Analyses performed include: \itemize{ \item
+#'  Unadjusted analysis if RunUnadjusted=TRUE \item Analysis adjusting for
+#'  specified adjustment variables if RunAdjusted=TRUE \item Analysis adjusting
+#'  for specified adjustment variables and estimated cell composition if
+#'  RunCellTypeAdjusted=TRUE \item If RunSexSpecific=TRUE, RunUnadjusted=TRUE,
+#'  and there are at least 10 female infants in the dataset, unadjusted analysis
+#'  among the female infants \item If RunSexSpecific=TRUE, RunAdjusted=TRUE, and
+#'  there are at least 10 female infants in the dataset, analysis adjusting for
+#'  specified adjustment variables among the female infants \item If
+#'  RunSexSpecific=TRUE, RunCellTypeAdjusted=TRUE, and there are at least 10
+#'  female infants in the dataset, analysis adjusting for specified adjustment
+#'  variables and estimated cell composition among the female infants \item If
+#'  RunSexSpecific=TRUE, RunUnadjusted=TRUE, and there are at least 10 male
+#'  infants in the dataset, unadjusted analysis among the male infants \item If
+#'  RunSexSpecific=TRUE, RunAdjusted=TRUE, and there are at least 10 male
 #'  infants in the dataset, analysis adjusting for specified adjustment
-#'  variables among the male infants \item If there are more than 10 male
-#'  infants in the dataset, analysis adjusting for specified adjustment
-#'  variables and estimated cell composition among the male infants}  }
+#'  variables among the male infants \item If RunSexSpecific=TRUE,
+#'  RunCellTypeAdjusted=TRUE, and there are more than 10 male infants in the
+#'  dataset, analysis adjusting for specified adjustment variables and estimated
+#'  cell composition among the male infants \item If RunCellTypeInteract=TRUE,
+#'  output of CellDMC (from package EpiDISH) based on the adjusted model}  }
 #'@return Outputs a list of data frames with the site-specific association
 #'  results. Also creates a new folder in the Output folder for the specified
 #'  exposure/outcome variable. The folder includes: \enumerate{\item Descriptive
@@ -118,10 +133,12 @@
 #'                         varofinterest="BWT",
 #'                         adjustmentvariables=c("Age","Gestage"),
 #'                         destinationfolder="H:/UCLA/PACE/Birthweight-placenta",
+#'                         robust=TRUE,
 #'                         RunUnadjusted=TRUE,
 #'                         RunAdjusted=TRUE,
 #'                         RunCellTypeAdjusted=TRUE,
 #'                         RunSexSpecific=TRUE,
+#'                         RunCellTypeInteract=TRUE,
 #'                         RestrictToSubset=FALSE,
 #'                         RestrictionVar=NULL,
 #'                         RestrictToIndicator=NULL,
@@ -130,7 +147,7 @@
 #'                         analysisname="primaryBWT")
 #'}
 
-dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
+dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
                        Table1vars=c("Age","BMI","Smoke","Parity","Sex","Gestage","BWT"),
                        StratifyTable1=FALSE,
                        StratifyTable1var=NULL,
@@ -142,13 +159,15 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
                        RestrictToSubset=FALSE,
                        RestrictionVar=NULL,
                        RestrictToIndicator=NULL,
+                       robust=TRUE,
                        RunUnadjusted=TRUE,
                        RunAdjusted=TRUE,
                        RunCellTypeAdjusted=TRUE,
                        RunSexSpecific=TRUE,
+                       RunCellTypeInteract=TRUE,
                        destinationfolder=NULL,savelog=TRUE,
-                       cohort=cohort,analysisdate=analysisdate,
-                       analysisname=analysisname){
+                       cohort=NULL,analysisdate=NULL,
+                       analysisname=NULL){
 
 
   ## Array must be "EPIC" or "450K"
@@ -157,6 +176,8 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
   if(array=="EPIC") annotdat<-as.data.frame(getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b4.hg19))
 
   if(RunCellTypeAdjusted & is.null(Omega)) stop("Cannot run analysis adjusting for cell composition if Omega is null")
+  if(RunCellTypeInteract & is.null(Omega)) stop("Cannot evaluate interaction with cell composition if Omega is null")
+  if(RunAdjusted & is.null(adjustmentvariables)) stop("If RunAdjusted=TRUE, must specify adjustment variables")
 
   if(!("Sex" %in% colnames(phenofinal))) stop("Variable 'Sex' is required and not in the dataframe phenofinal; see function arguments for specification")
   if(!("Basename" %in% colnames(phenofinal))) stop("Variable 'Basename' is required and not in the dataframe phenofinal")
@@ -276,6 +297,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
   if(FALSE %in% (Table1vars %in% colnames(finalpheno))) stop("One of the Table 1 variables is not in the dataset")
 
   cat("Variable of Interest:",varofinterest,"\n")
+  cat("  Running robust models?",robust,"\n")
   cat("Creating Table 1...","\n")
 
   ##Adding outcome/exposure of interest and adjustment variables to Table 1 as well
@@ -482,7 +504,8 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
 
     cat("Running Unadjusted Models...","\n")
     ## Unadjusted Models
-    tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,varofinterest=varofinterest,adjustmentvariables=NULL,
+    tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,robust=robust,
+                              varofinterest=varofinterest,adjustmentvariables=NULL,
                               celladjust=FALSE,Omega=NULL,phenoframe=finalpheno,maxit=maxit)
 
     if(length(grep("pval",colnames(tempout)))>0){
@@ -548,7 +571,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
     ## Adjusted model
     cat("Running Adjusted Models...","\n")
     cat("  Adjustment variables:",adjustmentvariables,"\n")
-    tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,varofinterest=varofinterest,
+    tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,robust=robust,varofinterest=varofinterest,
                               adjustmentvariables=adjustmentvariables,
                               celladjust=FALSE,Omega=NULL,phenoframe=finalpheno,maxit=maxit)
 
@@ -620,7 +643,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
       cat("  Number of cell types:",1,"\n")
     }
 
-    tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,varofinterest=varofinterest,
+    tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,robust=robust,varofinterest=varofinterest,
                               adjustmentvariables=adjustmentvariables,
                               celladjust=TRUE,Omega=Omega,phenoframe=finalpheno,maxit=maxit)
 
@@ -716,7 +739,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
         cat("Running Unadjusted Models for Females...","\n")
         ## Unadjusted model
 
-        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,varofinterest=varofinterest,
+        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=NULL,
                                   celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
 
@@ -782,7 +805,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
         cat("Running Adjusted Models for Females...","\n")
         ## Adjusted model
 
-        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,varofinterest=varofinterest,
+        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
                                   celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
 
@@ -847,7 +870,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
 
         cat("Running Adjusted Models with Cell Type for Females...","\n")
         ## Adjusted model with Cell Type
-        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,varofinterest=varofinterest,
+        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
                                   celladjust=TRUE,Omega=tempsexomega,phenoframe=tempsexpheno,maxit=maxit)
 
@@ -925,7 +948,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
 
         cat("Running Unadjusted Models for Males...","\n")
         ## Unadjusted model
-        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,varofinterest=varofinterest,
+        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=NULL,
                                   celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
 
@@ -990,7 +1013,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
 
         cat("Running Adjusted Models for Males...","\n")
         ## Adjusted model
-        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,varofinterest=varofinterest,
+        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
                                   celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
 
@@ -1055,7 +1078,7 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
 
         cat("Running Adjusted Models with Cell Type for Males...","\n")
         ## Adjusted model with Cell Type
-        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,varofinterest=varofinterest,
+        tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
                                   celladjust=TRUE,Omega=tempsexomega,phenoframe=tempsexpheno,maxit=maxit)
 
@@ -1120,12 +1143,57 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
 
   }
 
+  ## Run cell-type interaction model?
+  if(RunCellTypeInteract){
+
+    ## Adjusted model
+    cat("Running cell-type interaction models...","\n")
+
+    ## This model cannot handle missing
+    ## imputing missing with mean for that CpG locus
+    tempbetasint<-betafinal
+    kmiss <- which(is.na(tempbetasint), arr.ind=TRUE)
+    tempbetasint[kmiss] <- rowMeans(tempbetasint, na.rm=TRUE)[kmiss[,1]]
+
+    ## Must make sure there is no missing in the adjustment variables
+    ## or the outcome variable
+    tempdatanalysis<-finalpheno[,c("Basename",varofinterest,adjustmentvariables)]
+    tempdatanalysis$OutputVar<-tempdatanalysis[,varofinterest]
+    rownames(tempdatanalysis)<-as.character(tempdatanalysis$Basename)
+    tempdatanalysis<-na.omit(tempdatanalysis)
+
+    ## Make sure the beta matrix is the same samples
+    tempbetasint<-tempbetasint[,rownames(tempdatanalysis)]
+
+    ## Make sure the Omega matrix is the same samples
+    tempOmegaint<-Omega[rownames(tempdatanalysis),]
+
+    if(!is.null(adjustmentvariables)){
+
+      tempmodinfo<-paste(adjustmentvariables,collapse = "+")
+      tempmodinfo<-paste("~",tempmodinfo,sep="")
+      tempmodinfo<-model.matrix(as.formula(tempmodinfo),data=tempdatanalysis)
+
+      celldmc.o <- EpiDISH::CellDMC(beta.m=tempbetasint, pheno.v=tempdatanalysis$OutputVar, frac.m=tempOmegaint,
+                           cov.mod=tempmodinfo,adjPThresh=0.05)
+
+    } else {
+
+      celldmc.o <- EpiDISH::CellDMC(beta.m=tempbetasint, pheno.v=tempdatanalysis$OutputVar, frac.m=tempOmegaint,
+                           adjPThresh=0.05)
+
+    }
+
+    alldataout$CellInteraction<-celldmc.o
+
+  }
+
+
   OutputnameFileName<-paste(cohort,"_",analysisdate,"_",varofinterest,sep="")
   if(!is.null(analysisname)) OutputnameFileName<-paste(OutputnameFileName,"_",analysisname,sep="")
 
   save(file=paste(OutputnameFileName,"_lambdas.RData",sep=""),compress=TRUE, list=c("alllambda"))
   save(file=paste(OutputnameFileName,"_allanalyses.RData",sep=""),compress=TRUE, list=c("alldataout"))
-
   if(savelog){
     sink()
     sink(type="message")
@@ -1134,8 +1202,10 @@ dataAnalysis<-function(phenofinal=phenofinal,betafinal=betafinal,array="EPIC",
   return(alldataout)
 }
 
-runmodelfunction<-function(methyldat=NULL,vartype="ExposureCont",varofinterest=NULL,adjustmentvariables=NULL,
-                           celladjust=FALSE,Omega=NULL,phenoframe=NULL,maxit=maxit){
+runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjustmentvariables=NULL,
+                           celladjust=NULL,Omega=NULL,phenoframe=NULL,robust=NULL,maxit=NULL){
+
+
 
   ## Reducing phenotype file to essential variables
   inanalysis<-phenoframe[,c("Basename",varofinterest,adjustmentvariables)]
@@ -1167,67 +1237,130 @@ runmodelfunction<-function(methyldat=NULL,vartype="ExposureCont",varofinterest=N
   }
 
   ## Site-specific analysis
-  outresults<-plyr::adply(methyldat,1,function(x){
+  outresults<-plyr::adply(methyldat,1,function(x,vartype.=vartype,
+                                               varofinterest.=varofinterest,
+                                               robust.=robust,
+                                               celladjust.=celladjust,
+                                               Omega.=Omega,
+                                               maxit.=maxit){
 
     ## Scaling DNA methylation if it is the exposure
-    if(vartype=="OutcomeCont" | vartype=="OutcomeBin"){
+    if(vartype.=="OutcomeCont" | vartype.=="OutcomeBin"){
       x<-x*100
     }
 
     tempframe<-inanalysis
     tempframe$Methyl<-x
 
-    if(celladjust) {
-      if(class(Omega)!="matrix") tempframe$tempOmega<-Omega
+    if(celladjust.) {
+      if(class(Omega.)!="matrix") tempframe$tempOmega<-Omega
     }
 
     tempframe<-na.omit(tempframe)
     NinAnalysis<-nrow(tempframe)
-    if(vartype=="ExposureCat") numbercategories<-length(levels(tempframe[,varofinterest]))
+    if(vartype.=="ExposureCat") numbercategories<-length(levels(tempframe[,varofinterest.]))
 
-    if(celladjust) {
+    if(celladjust.) {
 
-      if(class(Omega)=="matrix") {
+      if(class(Omega.)=="matrix") {
 
-        tempOmega<-Omega[rownames(tempframe),]
+        tempOmega<-Omega.[rownames(tempframe),]
 
       }
     }
 
-    if(vartype=="OutcomeCont" | vartype=="ExposureCont" | vartype=="ExposureCat"){
+    if(vartype.=="OutcomeCont" | vartype.=="ExposureCont" | vartype.=="ExposureCat"){
 
-      tryfirst = try(rlm(as.formula(modformula),data=tempframe,maxit=maxit),silent=TRUE)
-      if(length(tryfirst)>1) tryfirst<-tryfirst[1]
+      if(robust.) {
 
-      if(class(tryfirst) == "try-error"){
+        tryfirst = try(rlm(as.formula(modformula),data=tempframe,maxit=maxit.),silent=TRUE)
+        if(length(tryfirst)>1) tryfirst<-tryfirst[1]
 
-        outtemp<-as.data.frame(matrix(NinAnalysis,nrow=1,dimnames=list(NULL,"n")))
-
-
-      } else {
-
-        mod<-rlm(as.formula(modformula),data=tempframe,maxit=maxit)
-        trysecond = try(vcovHC(mod, type="HC0"),silent=TRUE)
-        if(length(trysecond)>1) trysecond<-trysecond[1]
-
-        if(class(trysecond) == "try-error"){
+        if(class(tryfirst) == "try-error"){
 
           outtemp<-as.data.frame(matrix(NinAnalysis,nrow=1,dimnames=list(NULL,"n")))
 
         } else {
 
-          mod = rlm(as.formula(modformula),data=tempframe,maxit=maxit)
-          cf = lmtest::coeftest(mod, vcov=vcovHC(mod, type="HC0"))
-          convergemessage<-ifelse(mod$converged,"none","'rlm' failed to converge")
+          mod<-rlm(as.formula(modformula),data=tempframe,maxit=maxit.)
+          trysecond = try(vcovHC(mod, type="HC0"),silent=TRUE)
+          if(length(trysecond)>1) trysecond<-trysecond[1]
+
+          if(class(trysecond) == "try-error"){
+
+            outtemp<-as.data.frame(matrix(NinAnalysis,nrow=1,dimnames=list(NULL,"n")))
+
+          } else {
+
+            mod = rlm(as.formula(modformula),data=tempframe,maxit=maxit.)
+            cf = lmtest::coeftest(mod, vcov=vcovHC(mod, type="HC0"))
+            convergemessage<-ifelse(mod$converged,"none","'rlm' failed to converge")
+
+            ## If categorical exposure
+            if(vartype.=="ExposureCat"){
+
+              ## if number of categories is greater than two, output all exposure of interest coefficients
+              if(numbercategories>2){
+
+                outtempv1<-as.matrix(cf[c(2:numbercategories),])
+                colnames(outtempv1)<-c("coef","se","zval","pval")
+
+                outtemp<-NULL
+                for(p in 1:nrow(outtempv1)){
+
+                  tempinfo<-outtempv1[p,]
+                  names(tempinfo)<-paste(colnames(outtempv1),rownames(outtempv1)[p],sep="_")
+                  outtemp<-c(outtemp,tempinfo)
+
+                }
+
+                outtemp<-as.data.frame(matrix(outtemp,nrow=1,dimnames =list(NULL,names(outtemp))))
+                outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
+
+              } else {
+
+                outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
+                colnames(outtemp)<-paste(c("coef","se","zval","pval"),rownames(cf)[2],sep="_")
+                outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
+
+              }
+
+
+            } else {
+
+              outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
+              colnames(outtemp)<-c("coef","se","zval","pval")
+              outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
+
+            }
+
+
+          }
+
+        }
+
+      } else {
+
+        tryfirst = try(lm(as.formula(modformula),data=tempframe),silent=TRUE)
+        if(length(tryfirst)>1) tryfirst<-tryfirst[1]
+
+        if(class(tryfirst) == "try-error"){
+
+          outtemp<-as.data.frame(matrix(NinAnalysis,nrow=1,dimnames=list(NULL,"n")))
+
+        } else {
+
+          mod = lm(as.formula(modformula),data=tempframe)
+          cf = summary(mod)$coef
 
           ## If categorical exposure
-          if(vartype=="ExposureCat"){
+          if(vartype.=="ExposureCat"){
 
             ## if number of categories is greater than two, output all exposure of interest coefficients
             if(numbercategories>2){
 
               outtempv1<-as.matrix(cf[c(2:numbercategories),])
-              colnames(outtempv1)<-c("coef","se","zval","pval")
+              colnames(outtempv1)<-c("coef","se","tval","pval")
 
               outtemp<-NULL
               for(p in 1:nrow(outtempv1)){
@@ -1239,13 +1372,13 @@ runmodelfunction<-function(methyldat=NULL,vartype="ExposureCont",varofinterest=N
               }
 
               outtemp<-as.data.frame(matrix(outtemp,nrow=1,dimnames =list(NULL,names(outtemp))))
-              outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
+              outtemp<-cbind(n=NinAnalysis,outtemp)
 
             } else {
 
               outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
-              colnames(outtemp)<-paste(c("coef","se","zval","pval"),rownames(cf)[2],sep="_")
-              outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
+              colnames(outtemp)<-paste(c("coef","se","tval","pval"),rownames(cf)[2],sep="_")
+              outtemp<-cbind(n=NinAnalysis,outtemp)
 
             }
 
@@ -1253,13 +1386,14 @@ runmodelfunction<-function(methyldat=NULL,vartype="ExposureCont",varofinterest=N
           } else {
 
             outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
-            colnames(outtemp)<-c("coef","se","zval","pval")
-            outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
+            colnames(outtemp)<-c("coef","se","tval","pval")
+            outtemp<-cbind(n=NinAnalysis,outtemp)
 
           }
 
 
         }
+
 
       }
 
@@ -1267,7 +1401,7 @@ runmodelfunction<-function(methyldat=NULL,vartype="ExposureCont",varofinterest=N
 
     if(vartype=="OutcomeBin"){
 
-      Tempoutcome<-tempframe[,varofinterest]
+      Tempoutcome<-tempframe[,varofinterest.]
       Ncases<-length(Tempoutcome[which(Tempoutcome==1)])
       Ncontrols<-length(Tempoutcome[which(Tempoutcome==0)])
       mod = glm(as.formula(modformula),data=tempframe,family = "binomial")
@@ -1289,7 +1423,7 @@ runmodelfunction<-function(methyldat=NULL,vartype="ExposureCont",varofinterest=N
 }
 
 
-qqnormplot<-function(fitinfo=fitinfo,title=title){
+qqnormplot<-function(fitinfo=NULL,title=NULL){
   o <- -log10(sort(fitinfo$pval,decreasing=F))
   e <- -log10( 1:length(o)/length(o))
   qqdata<-data.frame(o=o,e=e)
@@ -1303,7 +1437,7 @@ qqnormplot<-function(fitinfo=fitinfo,title=title){
           plot.title=element_text(face="bold",size=18,hjust=0))
 }
 
-volcanoplot<-function(fitinfo=fitinfo,title=title){
+volcanoplot<-function(fitinfo=NULL,title=NULL){
 
   fitinfo$fdr<-p.adjust(fitinfo$pval,method="fdr")
   if(min(fitinfo$fdr)<0.05){
@@ -1324,8 +1458,8 @@ volcanoplot<-function(fitinfo=fitinfo,title=title){
           plot.title=element_text(face="bold",size=18,hjust=0))
 }
 
-mostsig<-function(fitinfo=fitinfo,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                  finalpheno=finalpheno,title=NULL,varofinterest=varofinterest,vartype=vartype){
+mostsig<-function(fitinfo=NULL,ntop=NULL,annotdat=NULL,betafinal=NULL,
+                  finalpheno=NULL,title=NULL,varofinterest=NULL,vartype=NULL){
 
   fitinfo<-fitinfo[order(fitinfo$pval),]
   topsig<-fitinfo[1:ntop,]
@@ -1372,10 +1506,10 @@ mostsig<-function(fitinfo=fitinfo,ntop=20,annotdat=annotdat,betafinal=betafinal,
   }
 }
 
-runallplots<-function(fitinfo=fitinfo,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                      finalpheno=finalpheno,title="Adjusted_Analysis",
-                      varofinterest=varofinterest,vartype=vartype,
-                      cohort=cohort,analysisdate=analysisdate){
+runallplots<-function(fitinfo=NULL,ntop=NULL,annotdat=NULL,betafinal=NULL,
+                      finalpheno=NULL,title=NULL,
+                      varofinterest=NULL,vartype=NULL,
+                      cohort=NULL,analysisdate=NULL){
 
   p<-qqnormplot(fitinfo=fitinfo,title=title)
   ggsave(filename=paste(cohort,"_",analysisdate,"_QQnorm_",title,".png",sep=""),
@@ -1391,7 +1525,7 @@ runallplots<-function(fitinfo=fitinfo,ntop=20,annotdat=annotdat,betafinal=betafi
 
 }
 
-summarizeData<-function(variable=variable,continuous=TRUE,title=title){
+summarizeData<-function(variable=NULL,continuous=TRUE,title=NULL){
 
   tempvariable<-variable
 
@@ -1400,10 +1534,14 @@ summarizeData<-function(variable=variable,continuous=TRUE,title=title){
     tempvariable<-as.numeric(tempvariable)
     tempmedian<-format(round(median(tempvariable,na.rm=TRUE),2),nsmall=2)
     temprange<-trimws(format(round(range(tempvariable,na.rm = TRUE),2),nsmall=2))
+
+    tempmean<-format(round(mean(tempvariable,na.rm=TRUE),2),nsmall=2)
+    tempSD<-trimws(format(round(sd(tempvariable,na.rm = TRUE),2),nsmall=2))
+
     nmiss<-length(tempvariable[is.na(tempvariable)])
 
     ## note if any missing data and create output
-    infoout<-c(title,nmiss,"",paste(tempmedian," (",temprange[1],"-",temprange[2],")",sep=""))
+    infoout<-c(title,nmiss,"",paste(tempmedian," (",temprange[1],"-",temprange[2],"); ",tempmean," (",tempSD,")",sep=""))
 
   } else {
 

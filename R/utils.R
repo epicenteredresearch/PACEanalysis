@@ -10,44 +10,88 @@ rowVars <- function(x, na.rm=FALSE, dims=1, unbiased=TRUE,
 
 expit2 = function(x) 2^x/(1+2^x)
 
-newgapfinder<-function(betamatrix=NULL,cutoffnum=5){
+outliermethod <- function(betamatrix=NULL,quantilemethod=NULL,trimming=FALSE,pct=0.005,NumberOutliers=5) {
 
-  NAwhenGap<-apply(betamatrix,1,function(x){
+  ## If trimming, using the IQR; percentile is 0.25
+  if(trimming) pct=0.25
+  betamatrixoriginal<-betamatrix
 
-    originalbeta<-x
-    perc25<-quantile(originalbeta,0.25,na.rm=TRUE)
-    perc75<-quantile(originalbeta,0.75,na.rm=TRUE)
-    gapsize<-abs(perc75-perc25)*3
-    tempbeta<-sort(originalbeta)
-    diffbetas<-diff(tempbeta)
-    gapindexes <- which(diffbetas>=gapsize)
-    numbergaps<-length(gapindexes)
+  if(quantilemethod=="EmpiricalBeta"){
 
-    if(numbergaps>0){
+    ## Using Method of Moments approach; faster than MLE
+    sample.means <- rowMeans(betamatrix, na.rm=T)
+    sample.vars <- matrixStats::rowVars(betamatrix, na.rm=T)
 
-      for(i in 1:numbergaps){
-        tempind<-gapindexes[i]
+    v <- sample.means * (1 - sample.means)
 
-        ## If a low outlier and number of outliers is less than the allowed cutoff number
-        if(tempind<ncol(betamatrix)/2 & tempind <= cutoffnum){
-          OutlierIDs<-names(tempbeta)[1:tempind]
-          originalbeta[OutlierIDs]<-NA
-        }
+    # initialize
+    shape1<-rep(NA,length(v))
+    shape2<-rep(NA,length(v))
 
-        ## If a high outlier and number of outliers is less than the allowed cutoff number
-        if (tempind>ncol(betamatrix)/2 & tempind >= (ncol(betamatrix) - cutoffnum)){
-          OutlierIDs<-names(tempbeta)[(tempind+1):ncol(betamatrix)]
-          originalbeta[OutlierIDs]<-NA
-        }
-      }
-    }
-    return(originalbeta)
-  })
+    ## less than v
+    ind1 <- which(sample.means < v , arr.ind=T)
+    shape2[ind1] <- sample.means[ind1] * (v[ind1]/sample.vars[ind1] - 1)
+    shape1[ind1]  <- (1 - sample.means[ind1]) * (v[ind1]/sample.vars[ind1] - 1)
 
-  NAwhenGap<-t(NAwhenGap)
-  colnames(NAwhenGap)<-colnames(betamatrix)
-  rownames(NAwhenGap)<-rownames(betamatrix)
+    ## greater than v; switch shape parameters
+    ind2 <- which(sample.means >= v, arr.ind=T)
+    shape1[ind2] <- sample.means[ind2] * (v[ind2]/sample.vars[ind2] - 1)
+    shape2[ind2] <- (1 - sample.means[ind2]) * (v[ind2]/sample.vars[ind2] - 1)
 
-  return(NAwhenGap)
+    low<-qbeta(pct,shape1,shape2,lower.tail=TRUE)
+    upper<-qbeta((1-pct),shape1,shape2,lower.tail=TRUE)
+    quantiles<-cbind(low,upper)
+
+  }
+
+  if(quantilemethod=="Quantile"){
+    quantiles <- matrixStats::rowQuantiles(betamatrix, probs=c(pct,(1-pct)), na.rm=T)
+  }
+
+  ## Trimming is based on 3*IQR
+  if(trimming){
+
+    IQRtemp<-quantiles[,2]-quantiles[,1]
+    low <- quantiles[,1]-3*IQRtemp
+    upper <- quantiles[,2]+3*IQRtemp
+
+    outliers.lower <- rowSums(betamatrix < low, na.rm=T)
+    outliers.upper <- rowSums(betamatrix > upper, na.rm=T)
+
+    betamatrix[which(betamatrix <= low, arr.ind=T)] <- NA
+    betamatrix[which(betamatrix >= upper, arr.ind=T)] <- NA
+
+  ## If we don't trim, we winsorize
+  } else {
+
+    low <- quantiles[,1]
+    upper <- quantiles[,2]
+
+    outliers.lower <- rowSums(betamatrix < low, na.rm=T)
+    outliers.upper <- rowSums(betamatrix > upper, na.rm=T)
+
+    idx <- which(betamatrix < low, arr.ind=T)
+    betamatrix[idx] <- low[idx[,1]]
+
+    idx <- which(betamatrix > upper, arr.ind=T)
+    betamatrix[idx] <- upper[idx[,1]]
+
+  }
+
+  ## If more outliers than a certain specified number (NumberOutliers)
+  ## assuming they are not outliers, but reflective of the data distribution
+  idx <- which(outliers.lower >= NumberOutliers)
+  betamatrix[idx,]<-betamatrixoriginal[idx,]
+
+  idx <- which(outliers.upper >= NumberOutliers)
+  betamatrix[idx,]<-betamatrixoriginal[idx,]
+
+  n <- rowSums(!is.na(betamatrix))
+  log <- data.frame(outliers.lower, outliers.upper, n)
+
+  return(list(methylation=betamatrix, log=log))
 
 }
+
+
+

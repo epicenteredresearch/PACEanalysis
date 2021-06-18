@@ -1,22 +1,56 @@
 ## ----eval=FALSE---------------------------------------------------------------
 #  
 #  ## First need to install required packages if you don't have them already
-#  install.packages(c("ggplot2","gplots","reshape","RPMM","RefFreeEWAS","pvclust","heatmap.plus",
-#                     "GGally","Hmisc","MASS","sandwich", "lmtest","plyr","remotes"))
-#  remotes::install_github("ki-tools/growthstandards")
+#  install.packages(c("ggplot2","gplots","reshape","RPMM","RefFreeEWAS","pvclust",
+#                     "GGally","Hmisc","MASS","sandwich", "lmtest","plyr","remotes","devtools"))
+#  
+#  remotes::install_version("heatmap.plus", "1.3")
 #  
 #  if (!requireNamespace("BiocManager", quietly = TRUE))
 #    install.packages("BiocManager")
-#  BiocManager::install(c("minfi","sva","sesame","wateRmelon","EpiDISH",
+#  BiocManager::install(c("methylumi","minfi","sva","sesame","wateRmelon","EpiDISH",
 #                         "IlluminaHumanMethylationEPICmanifest",
 #                         "IlluminaHumanMethylation450kmanifest",
 #                         "IlluminaHumanMethylation450kanno.ilmn12.hg19",
 #                         "IlluminaHumanMethylationEPICanno.ilm10b4.hg19",
 #                         "FlowSorted.CordBlood.450k",
-#                         "FlowSorted.Blood.450k"))
+#                         "FlowSorted.Blood.450k",
+#                         "illuminaio"))
+#  
+#  if (!requireNamespace("BiocManager", quietly = TRUE))
+#      install.packages("BiocManager")
+#  
+#  BiocManager::install("FlowSorted.Blood.EPIC")
+#  
+#  remotes::install_github("bokeh/rbokeh")
+#  remotes::install_github("ki-tools/growthstandards")
+#  devtools::install_github("hhhh5/ewastools")
+#  
+#  ## If ExperimentHub (>1.17.2), need to update caching location
+#  moveFiles<-function(package){
+#         olddir <- path.expand(rappdirs::user_cache_dir(appname=package))
+#         newdir <- tools::R_user_dir(package, which="cache")
+#         dir.create(path=newdir, recursive=TRUE)
+#         files <- list.files(olddir, full.names =TRUE)
+#         moveres <- vapply(files,
+#             FUN=function(fl){
+#             filename = basename(fl)
+#             newname = file.path(newdir, filename)
+#             file.rename(fl, newname)
+#             },
+#             FUN.VALUE = logical(1))
+#         if(all(moveres)) unlink(olddir, recursive=TRUE)
+#         }
+#  
+#  package="ExperimentHub"
+#  moveFiles(package)
+#  
+#  ## If recently installed sesame, need to cache the associated annotation data
+#  ## This only needs to be done once per new installation of sesame
+#  sesameData::sesameDataCacheAll()
 #  
 #  ## Need to then install package, specifying path to the source package
-#  install.packages("F:\\PACE\\PACEanalysis_0.1.0.tar.gz",
+#  install.packages("F:\\PACE\\PACEanalysis_0.1.6.tar.gz",
 #                   repos = NULL, type="source")
 #  
 
@@ -44,6 +78,10 @@
 #  
 #  EDAresults<-ExploratoryDataAnalysis(RGset=exampledat,
 #                    globalvarexplore=c("BWT","Sex"),
+#                    DetectionPvalMethod="SeSAMe",
+#                    DetectionPvalCutoff=0.05,
+#                    minNbeads=3,
+#                    FilterZeroIntensities=TRUE,
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
 #                    savelog=TRUE,
 #                    cohort="HEBC",analysisdate="20201229")
@@ -53,12 +91,25 @@
 #  processedOut<-preprocessingofData(RGset=exampledat,
 #                    SamplestoRemove=EDAresults$SamplestoRemove,
 #                    ProbestoRemove=EDAresults$ProbestoRemove,
-#                    DetectionPvals=EDAresults$DetectionPval,
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
-#                    compositeCellType="RefFree",
+#                    compositeCellType="Placenta",
 #                    KchooseManual=NULL,
 #                    savelog=TRUE,
 #                    cohort="HEBC",analysisdate="20201229")
+#  
+#  betasabovedetection<-detectionMask(processedBetas=processedOut$processedBetas,
+#                                    DetectionPvals=EDAresults$DetectionPval,
+#                                    DetectionPvalCutoff=0.05,
+#                                    IndicatorGoodIntensity=EDAresults$IndicatorGoodIntensity,
+#                                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                                    cohort="HEBC",analysisdate="20201229")
+#  
+#  Betasnooutliers<-outlierprocess(processedBetas=betasabovedetection,
+#                                    quantilemethod="Quantile",
+#                                    trimming=TRUE,
+#                                    pct=0.25,
+#                                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
+#                                    cohort="HEBC",analysisdate="20201229")
 #  
 
 ## ----eval=FALSE---------------------------------------------------------------
@@ -110,11 +161,12 @@
 #  
 #    cat("Outcome:",modelstorun$varofinterest[i],"\n")
 #    tempresults<-dataAnalysis(phenofinal=phenodataframe,
-#                    betafinal=processedOut$processedBetas[1:100,], ## restricting to first 100 loci
+#                    betafinal=Betasnooutliers[1:100,], ## restricting to first 100 loci
 #                    array="450K",
 #                    maxit=100,
 #                    Omega=processedOut$Omega,
 #                    vartype=modelstorun$vartype[i],
+#                    robust=TRUE,
 #                    varofinterest=modelstorun$varofinterest[i],
 #                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
 #                                     "Smoke","preBMI","Ethnic"),
@@ -126,6 +178,7 @@
 #                    RunAdjusted=TRUE,
 #                    RunCellTypeAdjusted=TRUE,
 #                    RunSexSpecific=TRUE,
+#                    RunCellTypeInteract=TRUE,
 #                    RestrictToSubset=FALSE,
 #                    RestrictionVar=NULL,
 #                    RestrictToIndicator=NULL,
@@ -141,11 +194,12 @@
 #  
 #    cat("Outcome:",modelstorun$varofinterest[i],"\n")
 #    tempresults<-dataAnalysis(phenofinal=phenodataframe,
-#                    betafinal=processedOut$processedBetas,
+#                    betafinal=Betasnooutliers,
 #                    array="450K",
 #                    maxit=100,
 #                    Omega=processedOut$Omega,
 #                    vartype=modelstorun$vartype[i],
+#                    robust=TRUE,
 #                    varofinterest=modelstorun$varofinterest[i],
 #                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
 #                                     "Smoke","preBMI","Ethnic"),
@@ -157,6 +211,7 @@
 #                    RunAdjusted=TRUE,
 #                    RunCellTypeAdjusted=TRUE,
 #                    RunSexSpecific=TRUE,
+#                    RunCellTypeInteract=TRUE,
 #                    RestrictToSubset=FALSE,
 #                    RestrictionVar=NULL,
 #                    RestrictToIndicator=NULL,
@@ -165,11 +220,12 @@
 #                    cohort="HEBC",analysisdate="20210103")
 #  
 #      tempresultsNonHispanicWhite<-dataAnalysis(phenofinal=phenodataframe,
-#                    betafinal=processedOut$processedBetas,
+#                    betafinal=Betasnooutliers,
 #                    array="450K",
 #                    maxit=100,
 #                    Omega=processedOut$Omega,
 #                    vartype=modelstorun$vartype[i],
+#                    robust=TRUE,
 #                    varofinterest=modelstorun$varofinterest[i],
 #                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
 #                                     "Smoke","preBMI"),
@@ -181,6 +237,7 @@
 #                    RunAdjusted=TRUE,
 #                    RunCellTypeAdjusted=TRUE,
 #                    RunSexSpecific=TRUE,
+#                    RunCellTypeInteract=TRUE,
 #                    RestrictToSubset=TRUE,
 #                    RestrictionVar="Ethnic",
 #                    RestrictToIndicator="1",
@@ -197,11 +254,12 @@
 #  
 #    cat("Outcome:",modelstorun$varofinterest[i],"\n")
 #    tempresults<-dataAnalysis(phenofinal=phenodataframe,
-#                    betafinal=processedOut$processedBetas,
+#                    betafinal=Betasnooutliers,
 #                    array="450K",
 #                    maxit=100,
 #                    Omega=processedOut$Omega,
 #                    vartype=modelstorun$vartype[i],
+#                    robust=TRUE,
 #                    varofinterest=modelstorun$varofinterest[i],
 #                    Table1vars=c("Gestage","Sex","Age","Parity","MaternalEd",
 #                                     "Smoke","preBMI"),
@@ -213,6 +271,7 @@
 #                    RunAdjusted=TRUE,
 #                    RunCellTypeAdjusted=TRUE,
 #                    RunSexSpecific=TRUE,
+#                    RunCellTypeInteract=TRUE,
 #                    RestrictToSubset=FALSE,
 #                    RestrictionVar=NULL,
 #                    RestrictToIndicator=NULL,

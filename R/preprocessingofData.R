@@ -8,9 +8,6 @@
 #'  based on the exploratory data analysis; default is NULL
 #'@param ProbestoRemove An optional character vector of CpGIDs to exclude based
 #'  on the exploratory data analysis; default is NULL
-#'@param DetectionPvals An optional matrix where DNA methylation intensities are
-#'  coded as NA (missing) if they do not meet the detection p-value, and 1
-#'  otherwise. This matrix is returned by the function ExploratoryDataAnalysis
 #'@param compositeCellType A required character string indicating the type of
 #'  cell composition estimation to perform. The default is "RefFree" indicating
 #'  a reference-free deconvolution; other options are "Blood", "Placenta", and
@@ -42,10 +39,7 @@
 #'  outliers are being generated. If so, reduce Kchoose value by 1 using the
 #'  argument KchooseManual, re-run the function preprocessingofData, and
 #'  re-examine outlier plots. Reduce KchooseManual until extreme outliers are
-#'  gone. \item Remove extreme outliers using a modified version of GapHunter.
-#'  Gaps must be at least 3*IQR; the cutoff for the number of outliers in a
-#'  group is either a maximum of 5 or 0.0025 of the total number of samples
-#'  (whichever is larger). Detected outliers are recoded as NA.}
+#'  gone.
 #'@return Figures (PDFs/PNGs) of associations between top PCs and indicators of
 #'  batch before and after ComBat (if an indicator for batch was included in the
 #'  dataset), as well as plots to identify potential outliers driving the
@@ -61,19 +55,17 @@
 #'processedOut<-preprocessingofData(RGset=exampledat,
 #'                                  SamplestoRemove=EDAtrying$SamplestoRemove,
 #'                                  ProbestoRemove=EDAtrying$ProbestoRemove,
-#'                                  DetectionPvals=EDAtrying$DetectionPvals,
-#'                                  compositeCellType ="RefFree",
+#'                                  compositeCellType ="Placenta",
 #'                                  KchooseManual=NULL,
 #'                                  destinationfolder="H:/UCLA/PACE/Birthweight-placenta",
 #'                                  savelog=TRUE,
 #'                                  cohort="HEBC",analysisdate="20200710")
 #'}
 
-preprocessingofData<-function(RGset=RGset,SamplestoRemove=NULL,ProbestoRemove=NULL,
-                              DetectionPvals=NULL,
-                              compositeCellType="RefFree",
+preprocessingofData<-function(RGset=NULL,SamplestoRemove=NULL,ProbestoRemove=NULL,
+                              compositeCellType=NULL,
                               KchooseManual=NULL,
-                              cohort=cohort,analysisdate=analysisdate,destinationfolder=NULL,savelog=TRUE){
+                              cohort=NULL,analysisdate=NULL,destinationfolder=NULL,savelog=TRUE){
 
   if(is.null(destinationfolder)) stop("Please specify a destination folder")
 
@@ -97,7 +89,7 @@ preprocessingofData<-function(RGset=RGset,SamplestoRemove=NULL,ProbestoRemove=NU
   Kchoose<-NA # starting values
   Omega<-NA # starting values
 
-  ## removing any poorly performing IDs based on exploratory data analysis
+  ## removing any poorly performing samples based on exploratory data analysis
   if (!is.null(SamplestoRemove) & length(SamplestoRemove)>0){
     cat("Removing",length(SamplestoRemove),"samples...","\n")
     RGset<-RGset[,!(sampleNames(RGset) %in% SamplestoRemove)]
@@ -105,18 +97,11 @@ preprocessingofData<-function(RGset=RGset,SamplestoRemove=NULL,ProbestoRemove=NU
     cat("Removing zero samples...","\n")
   }
 
+  RGset<-as(RGset,"RGChannelSet")
+
   cat("Running Functional Normalization...","\n")
   ## Rerunning functional normalization
   Mset.norm = preprocessFunnorm(RGset, sex = NULL, bgCorr = T, dyeCorr = T, nPCs = 2, verbose = TRUE)
-
-  ## removing any poorly performing probes based on exploratory data analysis
-  if (!is.null(ProbestoRemove) & length(ProbestoRemove)>0){
-    cat("Removing",length(ProbestoRemove),"probes...","\n")
-    Mset.norm<-Mset.norm[!(featureNames(Mset.norm) %in% ProbestoRemove),]
-  } else {
-    cat("Removing zero probes...","\n")
-  }
-
   justbetas.norm<-getBeta(Mset.norm)
 
   ## Run BMIQ function:
@@ -137,10 +122,10 @@ preprocessingofData<-function(RGset=RGset,SamplestoRemove=NULL,ProbestoRemove=NU
   ## Replace all probes with no variance with NA and remove them from the FunNorm set
   vars[vars == 0] = NA
   vars = na.omit(vars)
-  intersect = intersect(rownames(vars), rownames(mval))
-  cat(nrow(mval) - length(intersect), "probes had no variance and were removed","\n")
-  fn.sub = FunNorm.BMIQ[intersect,]
-  mval = mval[intersect,]
+  intersectingCpGs = intersect(rownames(vars), rownames(mval))
+  cat(nrow(mval) - length(intersectingCpGs), "probes had no variance and were removed","\n")
+  fn.sub = FunNorm.BMIQ[intersectingCpGs,]
+  mval = mval[intersectingCpGs,]
 
   ## Run a principle component analysis to determine if there are any remaining
   ## batch effects following data normalization.
@@ -380,25 +365,14 @@ preprocessingofData<-function(RGset=RGset,SamplestoRemove=NULL,ProbestoRemove=NU
 
   if(compositeCellType=="Placenta"){
 
-    MsetRaw<-preprocessRaw(RGset)
-
-    pData(placentamethylsetT3)$CellCompareGroup<-"Reference"
-    pData(MsetRaw)$CellCompareGroup<-"Input"
-
-    combinedMset <- combineArrays(placentamethylsetT3, MsetRaw, outType = "IlluminaHumanMethylationEPIC")
-
-    combinedMset<-preprocessQuantile(combinedMset)
-    inputprocessedMset<-combinedMset[,which(pData(combinedMset)$CellCompareGroup=="Input")]
-    inputprocessedbetas<-getBeta(inputprocessedMset)
-
-    sharedCpGs<-intersect(rownames(plCellCpGsThird),rownames(inputprocessedbetas))
-    placentabetas<-inputprocessedbetas[sharedCpGs,]
-    plCellCpGsThird<-plCellCpGsThird[sharedCpGs,]
+    sharedCpGs<-intersect(rownames(plCellCpGsThird),rownames(betafinal))
+    placentabetas<-betafinal[sharedCpGs,]
+    plCellCpGsThirdtemp<-plCellCpGsThird[sharedCpGs,]
 
     ## Project cell composition using the constrained Houseman method
     Omega <- EpiDISH::epidish(
       beta.m = placentabetas,
-      ref.m = plCellCpGsThird,
+      ref.m = plCellCpGsThirdtemp,
       method = "CP"
     )$estF
 
@@ -460,35 +434,15 @@ preprocessingofData<-function(RGset=RGset,SamplestoRemove=NULL,ProbestoRemove=NU
 
   }
 
-
-  #################################################################################
-  # R-code for detecting outliers using gaphunter
-
-  cat("Detecting beta-value outliers...","\n")
-  # Required input & parameters
-  N <- ncol(betafinal) ## No. of samples in your data.
-  cutoff <- ifelse(0.0025*N<5,5,ceiling(N*0.0025))
-  ## This cutoff is chosen for detecting probes with outliers. We have chosen this
-  ## cutoff such that a probe can have a maximum of 5 or 0.0025 of the total number
-  ## of samples (whichever is larger) as outliers. Can change it if required.
-
-  betafinal.nooutlier<-newgapfinder(betamatrix = betafinal,cutoffnum=cutoff)
-
-  betafinal.nooutlier.CpGperc<-apply(betafinal.nooutlier,1,function(x) (sum(is.na(x))/ncol(betafinal.nooutlier))*100)
-  betafinal.nooutlier.sampleperc<-apply(betafinal.nooutlier,2,function(x) (sum(is.na(x))/nrow(betafinal.nooutlier))*100)
-  write.csv(betafinal.nooutlier.CpGperc,paste(cohort,"_",analysisdate,"_NewGapHunter_CpGs.csv",sep=""))
-  write.csv(betafinal.nooutlier.sampleperc,paste(cohort,"_",analysisdate,"_NewGapHunter_Individuals.csv",sep=""))
-
-  if(!is.null(DetectionPvals)){
-
-    ## first restricting to the same probes and samples
-    DetectionPvals<-DetectionPvals[rownames(betafinal.nooutlier),]
-    DetectionPvals<-DetectionPvals[,colnames(betafinal.nooutlier)]
-
-    betafinal.nooutlier<-betafinal.nooutlier*DetectionPvals
+  ## removing any poorly performing probes based on exploratory data analysis
+  if (!is.null(ProbestoRemove) & length(ProbestoRemove)>0){
+    cat("Removing",length(ProbestoRemove),"probes...","\n")
+    betafinal<-betafinal[!(rownames(betafinal) %in% ProbestoRemove),]
+  } else {
+    cat("Removing zero probes...","\n")
   }
 
-  summarybetas<-apply(betafinal.nooutlier,1,function(x){
+  summarybetas<-apply(betafinal,1,function(x){
     tempx<-na.omit(x)
     Ntemp<-length(tempx)
     Nmisstemp<-length(x)-Ntemp
@@ -503,7 +457,7 @@ preprocessingofData<-function(RGset=RGset,SamplestoRemove=NULL,ProbestoRemove=NU
   summarybetas<-t(summarybetas)
   write.csv(summarybetas,paste(cohort,"_",analysisdate,"_Summarize_Beta_Values.csv",sep=""))
 
-  processedOut<-list(mset=Mset.norm,processedBetas=betafinal.nooutlier,Omega=Omega,Kchoose=Kchoose)
+  processedOut<-list(mset=Mset.norm,processedBetas=betafinal,Omega=Omega,Kchoose=Kchoose)
   save(file=paste(cohort,"_",analysisdate,"_Preprocessed.RData",sep=""),compress=TRUE, list=c("processedOut"))
 
   if(savelog){

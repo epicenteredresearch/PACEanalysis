@@ -93,30 +93,31 @@ run. Please specify in the form: YEARMONTHDAY, e.g. "20200205" for February
 5th 2020}
 }
 \value{
-A RGset with raw microarray intensity values. In addition to the
- columns included in the input PhenoData data.frame, the pData for this RGset
- will include the following columns: \item{ID}{Sample ID}
- \item{BWT}{Birthweight variable if BWTvar argument was not NULL; numeric}
- \item{Age}{Maternal age variable if AGEvar argument was not NULL; numeric}
- \item{BMI}{Maternal pre-pregnancy variable if BMIvar argument was not NULL;
- numeric} \item{Sex}{Infant sex variable if SEXvar argument was not NULL;
- factor, 'Female' or 'Male'} \item{Ethnic}{Maternal race/ethnicity variable
- if ETHNICvar argument was not NULL; factor} \item{Gestage}{Gestational age
- variable if GESTvar argument was not NULL; numeric}\item{Batch}{Batch
- variable if BATCHvar argument was not NULL; factor} \item{BirthLength}{Birth
- length variable if BIRTHLENGTHvar argument was not NULL; numeric}
- \item{HeadCircum}{Head circumference variable if HEADCIRCUMvar argument was
- not NULL; numeric} \item{BWTkg}{Birthweight in kg if BWTvar argument was not
- NULL} \item{wlr}{Birthweight birth length ratio if BWTvar and BirthLength
- arguments were not NULL} \item{BWT_Zscore}{Birthweight gestational age and
+A RGset (of class RGChannelSetExtended) with raw microarray intensity
+ values. In addition to the columns included in the input PhenoData
+ data.frame, the pData for this RGset will include the following columns:
+ \item{ID}{Sample ID} \item{BWT}{Birthweight variable if BWTvar argument was
+ not NULL; numeric} \item{Age}{Maternal age variable if AGEvar argument was
+ not NULL; numeric} \item{BMI}{Maternal pre-pregnancy variable if BMIvar
+ argument was not NULL; numeric} \item{Sex}{Infant sex variable if SEXvar
+ argument was not NULL; factor, 'Female' or 'Male'} \item{Ethnic}{Maternal
+ race/ethnicity variable if ETHNICvar argument was not NULL; factor}
+ \item{Gestage}{Gestational age variable if GESTvar argument was not NULL;
+ numeric}\item{Batch}{Batch variable if BATCHvar argument was not NULL;
+ factor} \item{BirthLength}{Birth length variable if BIRTHLENGTHvar argument
+ was not NULL; numeric} \item{HeadCircum}{Head circumference variable if
+ HEADCIRCUMvar argument was not NULL; numeric} \item{BWTkg}{Birthweight in kg
+ if BWTvar argument was not NULL} \item{wlr}{Birthweight birth length ratio
+ if BWTvar and BirthLength arguments were not NULL}
+ \item{BWT_Zscore}{Birthweight gestational age and sex-specific Z-scores
+ based on Newborn Cross-Sectional Study of the INTERGROWTH-21st Project}
+ \item{BirthLength_Zscore}{Birth length gestational age and sex-specific
+ Z-scores based on Newborn Cross-Sectional Study of the INTERGROWTH-21st
+ Project} \item{HeadCircum_Zscore}{Head circumference gestational age and
  sex-specific Z-scores based on Newborn Cross-Sectional Study of the
- INTERGROWTH-21st Project} \item{BirthLength_Zscore}{Birth length gestational
- age and sex-specific Z-scores based on Newborn Cross-Sectional Study of the
- INTERGROWTH-21st Project} \item{HeadCircum_Zscore}{Head circumference
+ INTERGROWTH-21st Project} \item{WLR_Zscore}{Birthweight birth length ratio
  gestational age and sex-specific Z-scores based on Newborn Cross-Sectional
- Study of the INTERGROWTH-21st Project} \item{WLR_Zscore}{Birthweight birth
- length ratio gestational age and sex-specific Z-scores based on Newborn
- Cross-Sectional Study of the INTERGROWTH-21st Project}
+ Study of the INTERGROWTH-21st Project}
 }
 \description{
 Reorganize data to standardize for analysis

@@ -1,7 +1,7 @@
 Package: PACEanalysis
 Type: Package
 Title: Analysis of PACE DNA Methylation Microarray Data
-Version: 0.1.1
+Version: 0.1.6
 Author: Alexandra Binder
 Maintainer: Alexandra Binder <ambinder@hawaii.edu>
 Description: Reads in IDAT files, performs data quality 
@@ -32,9 +32,11 @@ Imports:
   IlluminaHumanMethylationEPICmanifest,
   IlluminaHumanMethylation450kmanifest,
   FlowSorted.Blood.EPIC,
-  FlowSorted.CordBloodCombined.450k
+  FlowSorted.CordBloodCombined.450k,
+  ewastools,
+  matrixStats
 Depends: 
-  R (>= 3.5.0),
+  R (>= 4.1),
   minfi,
   ggplot2,
   Hmisc,
