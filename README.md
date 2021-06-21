@@ -14,4 +14,4 @@
 - Corrected the issue with -Inf and Inf estimates of contamination
 - Made sure that the package is compatible with the recent R update (v4.1.0)
 - Masking poor probe intensities has been moved into a new function so that investigators can change their mind without rerunning the full preprocessing function
-- Dealing with outliers has been moved into a new function so that investigators can change their mind without rerunning the full preprocessing function  
+- Dealing with outliers has been moved into a new function so that investigators can change their mind without rerunning the full preprocessing function
