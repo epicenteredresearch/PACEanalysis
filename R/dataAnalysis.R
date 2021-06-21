@@ -314,6 +314,23 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
   if(StratifyTable1) Table1vars<-Table1vars[-grep(StratifyTable1var,Table1vars)]
 
   subsetpheno <- finalpheno[,Table1vars]
+  rownames(subsetpheno)<-as.character(finalpheno$Basename)
+
+  ## complete case subset
+  subsetphenocomplete <- finalpheno[,c("Basename",varofinterest,adjustmentvariables)]
+  subsetphenocomplete <- na.omit(subsetphenocomplete)
+  subsetphenocomplete <- as.character(subsetphenocomplete$Basename)
+
+  ## Adding cell composition to Table 1 variables
+  if(!is.null(Omega)) {
+    if(is.matrix(Omega)){
+      tempOmega<-as.data.frame(Omega)
+      subsetpheno<-cbind(subsetpheno,tempOmega)
+    } else {
+      cat("Number of cell types:",1)
+      subsetpheno<-cbind(subsetpheno,Omega=Omega)
+    }
+  }
 
   ## only run if subsetpheno is a dataframe
   if(is.data.frame(subsetpheno)){
@@ -332,9 +349,7 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
       subsetpheno$StratifyTable1var<-as.character(subsetpheno$StratifyTable1var)
 
       tempStratifyNumbers<-plyr::ddply(subsetpheno,.(StratifyTable1var),function(x) data.frame(Ncat=nrow(x)))
-      subsetpheno<-merge(subsetpheno,tempStratifyNumbers,by="StratifyTable1var")
-      subsetpheno$StratifyTable1var<-paste(subsetpheno$StratifyTable1var," (n=", subsetpheno$Ncat,")",sep="")
-      subsetpheno$Ncat<-NULL
+      tempStratifyNumbers.CompleteCase<-plyr::ddply(subsetpheno[rownames(subsetpheno) %in% subsetphenocomplete,],.(StratifyTable1var),function(x) data.frame(Ncat=nrow(x)))
 
       subsetpheno<-reshape::melt(subsetpheno,id=c("Basename","StratifyTable1var"))
 
@@ -348,9 +363,13 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
 
     subsetpheno_cat<-subsetpheno[which(subsetpheno$Type=="Categorical"),]
     subsetpheno_cat$CharValue<-as.character(subsetpheno_cat$CharValue)
+    subsetpheno_cat$Basename<-as.character(subsetpheno_cat$Basename)
+
+    subsetpheno_cat_completecase<-subsetpheno_cat[subsetpheno_cat$Basename %in% subsetphenocomplete,]
 
     if(nrow(subsetpheno_cat)>0){
       if(StratifyTable1){
+
         Cat.Table.Summary<-plyr::ddply(subsetpheno_cat,.(Varname,StratifyTable1var),function(x){
           tempname<-unique(as.character(x$Varname))
           tempout<-summarizeData(variable=x$CharValue,continuous=FALSE,title=tempname)
@@ -358,7 +377,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
           colnames(tempout)<-c("Variable","Nmiss","Cat","Value")
           tempout
         })
+
+        Cat.Table.Summary.CompleteCase<-plyr::ddply(subsetpheno_cat_completecase,.(Varname,StratifyTable1var),function(x){
+          tempname<-unique(as.character(x$Varname))
+          tempout<-summarizeData(variable=x$CharValue,continuous=FALSE,title=tempname)
+          tempout<-as.data.frame(tempout)
+          colnames(tempout)<-c("Variable","Nmiss","Cat","Value")
+          tempout
+        })
+
       } else {
+
         Cat.Table.Summary<-plyr::ddply(subsetpheno_cat,.(Varname),function(x){
           tempname<-unique(as.character(x$Varname))
           tempout<-summarizeData(variable=x$CharValue,continuous=FALSE,title=tempname)
@@ -366,7 +395,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
           colnames(tempout)<-c("Variable","Nmiss","Cat","Value")
           tempout
         })
+
+        Cat.Table.Summary.CompleteCase<-plyr::ddply(subsetpheno_cat_completecase,.(Varname),function(x){
+          tempname<-unique(as.character(x$Varname))
+          tempout<-summarizeData(variable=x$CharValue,continuous=FALSE,title=tempname)
+          tempout<-as.data.frame(tempout)
+          colnames(tempout)<-c("Variable","Nmiss","Cat","Value")
+          tempout
+        })
+
       }
+
     } else {
       Cat.Table.Summary<-NULL
     }
@@ -374,9 +413,13 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
     subsetpheno_cont<-subsetpheno[which(subsetpheno$Type=="Continuous"),]
     ## converting back from factor to numeric
     subsetpheno_cont$CharValue<-as.numeric(as.character(subsetpheno_cont$CharValue))
+    subsetpheno_cont$Basename<-as.character(subsetpheno_cont$Basename)
+
+    subsetpheno_cont_completecase<-subsetpheno_cont[subsetpheno_cont$Basename %in% subsetphenocomplete,]
 
     if(nrow(subsetpheno_cont)>0){
       if(StratifyTable1){
+
         Cont.Table.Summary<-plyr::ddply(subsetpheno_cont,.(Varname,StratifyTable1var),function(x){
           tempname<-unique(as.character(x$Varname))
           tempout<-summarizeData(variable=x$CharValue,continuous=TRUE,title=tempname)
@@ -384,14 +427,32 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
         })
         colnames(Cont.Table.Summary)[3:6]<-c("Variable","Nmiss","Cat","Value")
 
+        Cont.Table.Summary.CompleteCase<-plyr::ddply(subsetpheno_cont_completecase,.(Varname,StratifyTable1var),function(x){
+          tempname<-unique(as.character(x$Varname))
+          tempout<-summarizeData(variable=x$CharValue,continuous=TRUE,title=tempname)
+          tempout
+        })
+        colnames(Cont.Table.Summary.CompleteCase)[3:6]<-c("Variable","Nmiss","Cat","Value")
+
+
       } else {
+
         Cont.Table.Summary<-plyr::ddply(subsetpheno_cont,.(Varname),function(x){
           tempname<-unique(as.character(x$Varname))
           tempout<-summarizeData(variable=x$CharValue,continuous=TRUE,title=tempname)
           tempout
         })
         colnames(Cont.Table.Summary)[2:5]<-c("Variable","Nmiss","Cat","Value")
+
+        Cont.Table.Summary.CompleteCase<-plyr::ddply(subsetpheno_cont_completecase,.(Varname),function(x){
+          tempname<-unique(as.character(x$Varname))
+          tempout<-summarizeData(variable=x$CharValue,continuous=TRUE,title=tempname)
+          tempout
+        })
+        colnames(Cont.Table.Summary.CompleteCase)[2:5]<-c("Variable","Nmiss","Cat","Value")
+
       }
+
     } else {
       Cont.Table.Summary<-NULL
     }
@@ -400,7 +461,19 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
     rownames(allouttable)<-NULL
     allouttable$Varname<-NULL
 
+    allouttable.CompleteCase<-rbind(Cont.Table.Summary.CompleteCase,Cat.Table.Summary.CompleteCase)
+    rownames(allouttable.CompleteCase)<-NULL
+    allouttable.CompleteCase$Varname<-NULL
+
     if(StratifyTable1){
+
+      allouttable<-merge(allouttable,tempStratifyNumbers,by="StratifyTable1var")
+      allouttable$StratifyTable1var<-paste(allouttable$StratifyTable1var," (n=", allouttable$Ncat,")",sep="")
+      allouttable$Ncat<-NULL
+
+      allouttable.CompleteCase<-merge(allouttable.CompleteCase,tempStratifyNumbers.CompleteCase,by="StratifyTable1var")
+      allouttable.CompleteCase$StratifyTable1var<-paste(allouttable.CompleteCase$StratifyTable1var," (n=", allouttable.CompleteCase$Ncat,")",sep="")
+      allouttable.CompleteCase$Ncat<-NULL
 
       allouttable$Cat<-as.character(allouttable$Cat)
       nmisstemp<-plyr::ddply(allouttable,.(Variable),function(x) data.frame(Nmiss=sum(as.numeric(x$Nmiss),na.rm=TRUE)))
@@ -408,12 +481,27 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
       allouttable<-reshape::cast(allouttable,Variable+Cat~StratifyTable1var,value="Value")
       allouttable<-merge(nmisstemp,allouttable,by="Variable")
 
+      allouttable.CompleteCase$Cat<-as.character(allouttable.CompleteCase$Cat)
+      nmisstemp<-plyr::ddply(allouttable.CompleteCase,.(Variable),function(x) data.frame(Nmiss=sum(as.numeric(x$Nmiss),na.rm=TRUE)))
+      nmisstemp$Nmiss[which(nmisstemp$Nmiss==0)]<-""
+      allouttable.CompleteCase<-reshape::cast(allouttable.CompleteCase,Variable+Cat~StratifyTable1var,value="Value")
+      allouttable.CompleteCase<-merge(nmisstemp,allouttable.CompleteCase,by="Variable")
+
     }
 
     allouttable$Variable[which(allouttable$Nmiss!="")]<-paste(allouttable$Variable[which(allouttable$Nmiss!="")]," (nmiss=",allouttable$Nmiss[which(allouttable$Nmiss!="")],")",sep="")
     allouttable$Nmiss<-NULL
 
-    write.csv(allouttable,paste(cohort,"_",analysisdate,"_Table_1.csv",sep=""),row.names=FALSE)
+    allouttable.CompleteCase$Variable[which(allouttable.CompleteCase$Nmiss!="")]<-paste(allouttable.CompleteCase$Variable[which(allouttable.CompleteCase$Nmiss!="")],
+                                                                                        " (nmiss=",allouttable.CompleteCase$Nmiss[which(allouttable.CompleteCase$Nmiss!="")],")",sep="")
+    allouttable.CompleteCase$Nmiss<-NULL
+
+    OutputnameTable1<-paste(cohort,"_",analysisdate,"_",varofinterest,sep="")
+    if(!is.null(analysisname)) OutputnameTable1<-paste(OutputnameTable1,"_",analysisname,sep="")
+
+    write.csv(allouttable,paste(OutputnameTable1,"_Table_1.csv",sep=""),row.names=FALSE)
+
+    write.csv(allouttable.CompleteCase,paste(OutputnameTable1,"_Table_1_Adjusted_Complete_Case.csv",sep=""),row.names=FALSE)
 
   }
 
