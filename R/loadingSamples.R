@@ -31,7 +31,7 @@
 #'@param GESTvar An optional character string indicating the column name for the
 #'  gestational age variable in the data.frame PhenoData; if there is no
 #'  gestational age variable in the data.frame PhenoData, can specify argument
-#'  value is NULL. Gestational age variable is expected to be in days
+#'  value is NULL. Gestational age variable is expected to be in weeks
 #'@param BIRTHLENGTHvar An optional character string indicating the column name
 #'  for the birth length variable in the data.frame PhenoData; if there is no
 #'  birth length variable in the data.frame PhenoData, can specify argument
