@@ -1,6 +1,9 @@
 # PACEanalysis
 
 ## UPDATES IN VERSION 0.1.7
+- Updating code for sesame detection p-values due to changes in sesame package
+
+## UPDATES IN VERSION 0.1.7
 - Now creates two "Table 1"s - one for all samples, and one complete case version
 - Adding cell composition to Table 1 (if Omega is provided)
 - Updated the naming of the Table 1 file so that multiple versions can be open at the same time
