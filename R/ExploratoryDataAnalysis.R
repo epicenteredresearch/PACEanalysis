@@ -125,6 +125,9 @@ ExploratoryDataAnalysis<-function(RGset=NULL,globalvarexplore=NULL,
 
   RGset<-as(RGset,"RGChannelSet")
 
+  tryingsesamize<-sesamize(RGset)
+  
+  
   ## Getting Raw Betas
   rawbetas<-preprocessRaw(RGset)
   justbetas<-getBeta(rawbetas)
@@ -368,8 +371,8 @@ ExploratoryDataAnalysis<-function(RGset=NULL,globalvarexplore=NULL,
 
   if(DetectionPvalMethod=="SeSAMe") {
     ## Use sesame to calculate the detection p-values
-    listsamples<-sesame::RGChannelSetToSigSets(RGset)
-    detectionpvals<-lapply(listsamples,function(sample) sesame::pOOBAH(sample, return.pval=TRUE))
+    listsamples<-RGChannelSetToSigDFs(RGset)
+    detectionpvals<-lapply(sdfs,function(sample) sesame::pOOBAH(sample, return.pval=TRUE))
     # old approach: detectionpvals<-lapply(listsamples,function(sample) sample@extra$pvals[["pOOBAH"]])
     detectionpvals<-do.call(cbind,detectionpvals)
     detectionpvalssave<-detectionpvals
