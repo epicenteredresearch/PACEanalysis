@@ -1,6 +1,6 @@
 # PACEanalysis
 
-## UPDATES IN VERSION 0.1.7
+## UPDATES IN VERSION 0.1.8
 - Updating code for sesame detection p-values due to changes in sesame package
 
 ## UPDATES IN VERSION 0.1.7
