@@ -25,6 +25,8 @@ dataAnalysis(
   RunCellTypeAdjusted = TRUE,
   RunSexSpecific = TRUE,
   RunCellTypeInteract = TRUE,
+  runparallel = FALSE,
+  number_cores = NULL,
   destinationfolder = NULL,
   savelog = TRUE,
   cohort = NULL,
@@ -120,6 +122,12 @@ Logic statement (TRUE or FALSE), default = TRUE}
 cell type(s) driving the differential methylation. Logic statement (TRUE or
 FALSE), default = TRUE}
 
+\item{runparallel}{Whether to run the site-specific analysis in parallel (TRUE
+or FALSE), default = FALSE}
+
+\item{number_cores}{If running in parallel, a numeric string indicating the
+number of cores to run (e.g. 4), default = NULL}
+
 \item{destinationfolder}{A character string indicating the location where
 files should be saved, e.g. "C:\\Home\\PACE\\BirthSize"}
 
@@ -206,6 +214,8 @@ allresults<-dataAnalysis(phenofinal=pData(processedOut$mset),
                         RestrictToSubset=FALSE,
                         RestrictionVar=NULL,
                         RestrictToIndicator=NULL,
+                        runparallel=FALSE,
+                        number_cores=NULL,
                         savelog=TRUE,
                         cohort="HEBC",analysisdate="20200710",
                         analysisname="primaryBWT")

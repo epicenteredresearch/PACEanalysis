@@ -4,7 +4,11 @@
 \alias{RGChannelSetToSigDFs}
 \title{Convert RGChannelSet (minfi) to a list of SigDF (SeSAMe)}
 \usage{
-RGChannelSetToSigDFs(rgSet, manifest = NULL, BPPARAM = SerialParam())
+RGChannelSetToSigDFs(
+  rgSet,
+  manifest = NULL,
+  BPPARAM = BiocParallel::SerialParam()
+)
 }
 \arguments{
 \item{rgSet}{a minfi::RGChannelSet}

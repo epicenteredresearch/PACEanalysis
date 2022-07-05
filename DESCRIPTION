@@ -35,7 +35,9 @@ Imports:
   FlowSorted.Blood.EPIC,
   FlowSorted.CordBloodCombined.450k,
   ewastools,
-  matrixStats
+  matrixStats,
+  parallel,
+  doParallel
 Depends: 
   R (>= 4.1),
   minfi,

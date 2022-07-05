@@ -28,7 +28,7 @@
 #' }
 #' @export 
 sesamize <- function(
-    rgSet, naFrac=1, BPPARAM=SerialParam(), HDF5=NULL,
+    rgSet, naFrac=1, BPPARAM=BiocParallel::SerialParam(), HDF5=NULL,
     HDF5SEdestination=paste0(tempdir(check=TRUE), "/sesamize_HDF5_scratch"),
     replace=FALSE) {
   
@@ -184,7 +184,7 @@ guessMinfiAnnotation <- function(ptf, annotation = NA) {
 #' }
 #' 
 #' @export 
-SigDFsToRGChannelSet <- function(sdfs, BPPARAM=SerialParam(), annotation=NA) {
+SigDFsToRGChannelSet <- function(sdfs, BPPARAM=BiocParallel::SerialParam(), annotation=NA) {
   
   if (is(sdfs, 'SigDF')) {
     sdfs <- list(sample=sdfs)
@@ -311,7 +311,7 @@ RGChannelSet1ToSigDF <- function(rgSet1, manifest = NULL, controls = NULL) {
 #' 
 #' @export
 RGChannelSetToSigDFs <- function(
-    rgSet, manifest=NULL, BPPARAM=SerialParam()) {
+    rgSet, manifest=NULL, BPPARAM=BiocParallel::SerialParam()) {
   
   samples <- colnames(rgSet)
   BiocParallel::bplapply(

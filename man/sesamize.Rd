@@ -8,7 +8,7 @@ The input is an RGSet and the output is a sesamized minfi::GenomicRatioSet}
 sesamize(
   rgSet,
   naFrac = 1,
-  BPPARAM = SerialParam(),
+  BPPARAM = BiocParallel::SerialParam(),
   HDF5 = NULL,
   HDF5SEdestination = paste0(tempdir(check = TRUE), "/sesamize_HDF5_scratch"),
   replace = FALSE

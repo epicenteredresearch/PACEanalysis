@@ -4,7 +4,11 @@
 \alias{SigDFsToRGChannelSet}
 \title{Convert sesame::SigDF to minfi::RGChannelSet}
 \usage{
-SigDFsToRGChannelSet(sdfs, BPPARAM = SerialParam(), annotation = NA)
+SigDFsToRGChannelSet(
+  sdfs,
+  BPPARAM = BiocParallel::SerialParam(),
+  annotation = NA
+)
 }
 \arguments{
 \item{sdfs}{a list of sesame::SigDF}

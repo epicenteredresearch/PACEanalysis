@@ -68,6 +68,10 @@
 #'@param RunCellTypeInteract Whether to run CellDMC to identify the specific
 #'  cell type(s) driving the differential methylation. Logic statement (TRUE or
 #'  FALSE), default = TRUE
+#'@param runparallel Whether to run the site-specific analysis in parallel (TRUE
+#'  or FALSE), default = FALSE
+#'@param number_cores If running in parallel, a numeric string indicating the
+#'  number of cores to run (e.g. 4), default = NULL
 #'@param destinationfolder A character string indicating the location where
 #'  files should be saved, e.g. "C:\\Home\\PACE\\BirthSize"
 #'@param savelog logic; TRUE indicates to save a log of the functions run
@@ -142,6 +146,8 @@
 #'                         RestrictToSubset=FALSE,
 #'                         RestrictionVar=NULL,
 #'                         RestrictToIndicator=NULL,
+#'                         runparallel=FALSE,
+#'                         number_cores=NULL,
 #'                         savelog=TRUE,
 #'                         cohort="HEBC",analysisdate="20200710",
 #'                         analysisname="primaryBWT")
@@ -165,6 +171,8 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
                        RunCellTypeAdjusted=TRUE,
                        RunSexSpecific=TRUE,
                        RunCellTypeInteract=TRUE,
+                       runparallel=FALSE,
+                       number_cores=NULL,
                        destinationfolder=NULL,savelog=TRUE,
                        cohort=NULL,analysisdate=NULL,
                        analysisname=NULL){
@@ -1290,10 +1298,146 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
   return(alldataout)
 }
 
+
+error_message <- function() 'This model failed'
+
+running_DMP_analysis<-function(x){
+  
+  ## Scaling DNA methylation if it is the exposure
+  if(vartype=="OutcomeCont" | vartype=="OutcomeBin"){
+    x<-x*100
+  }
+  
+  tempframe<-inanalysis
+  tempframe$Methyl<-x
+  
+  if(celladjust) {
+    if(class(Omega)[1]!="matrix") tempframe$tempOmega<-Omega
+  }
+  
+  tempframe<-na.omit(tempframe)
+  NinAnalysis<-nrow(tempframe)
+  if(vartype=="ExposureCat") numbercategories<-length(levels(tempframe[,varofinterest]))
+  
+  if(celladjust) {
+    
+    if(class(Omega)[1]=="matrix") {
+      
+      tempOmega<-Omega[rownames(tempframe),]
+      
+    }
+  }
+  
+  if(vartype=="OutcomeCont" | vartype=="ExposureCont" | vartype=="ExposureCat"){
+    
+    if(robust) {
+      
+      cf<-tryCatch(
+        
+        {
+          
+          mod <- rlm(as.formula(modformula),data=tempframe,maxit=maxit)
+          convergemessage<-ifelse(mod$converged,"none","'rlm' failed to converge")
+          
+          modout <- lmtest::coeftest(mod, vcov=vcovHC(mod, type="HC0"))
+          modout <- modout[,]
+          modout<-as.data.frame(modout)
+          modout$warnings<-convergemessage
+          modout
+          
+        },
+        
+        error = function(e) error_message()
+        
+      )
+      
+    } else {
+      
+      
+      cf<-tryCatch(
+        
+        {
+          
+          mod <- lm(as.formula(modformula),data=tempframe)
+          modout <- summary(mod)$coef
+          modout<-as.data.frame(modout)
+          modout$warnings<-"none"
+          modout
+          
+        },
+        
+        error = function(e) error_message()
+        
+      )
+      
+    }
+    
+    if(class(cf)=="data.frame"){
+      
+      if(vartype=="ExposureCat"){
+        
+        ## if number of categories is greater than two, output all exposure of interest coefficients
+        if(numbercategories>2){
+          
+          outtempv1<-as.matrix(cf[c(2:numbercategories),c(1:4)])
+          colnames(outtempv1)<-c("coef","se","teststat","pval")
+          
+          outtemp<-NULL
+          for(p in 1:nrow(outtempv1)){
+            
+            tempinfo<-outtempv1[p,]
+            names(tempinfo)<-paste(colnames(outtempv1),rownames(outtempv1)[p],sep="_")
+            outtemp<-c(outtemp,tempinfo)
+            
+          }
+          
+          outtemp<-as.data.frame(matrix(outtemp,nrow=1,dimnames =list(NULL,names(outtemp))))
+          outtemp<-cbind(n=NinAnalysis,outtemp,warnings=unique(cf$warnings))
+          
+        } else {
+          
+          outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
+          colnames(outtemp)<-paste(c("coef","se","teststat","pval","warnings"),rownames(cf)[2],sep="_")
+          outtemp<-cbind(n=NinAnalysis,outtemp)
+          
+        }
+        
+      } else {
+        
+        outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
+        colnames(outtemp)<-c("coef","se","teststat","pval","warnings")
+        outtemp<-cbind(n=NinAnalysis,outtemp)
+        
+      }
+      
+    } else {
+      
+      outtemp<-data.frame(n=NinAnalysis,coef=NA,se=NA,teststat=NA,pval=NA,warnings="This model failed")
+      
+    }
+    
+  }  
+  
+  if(vartype=="OutcomeBin"){
+    
+    Tempoutcome<-tempframe[,varofinterest]
+    Ncases<-length(Tempoutcome[which(Tempoutcome==1)])
+    Ncontrols<-length(Tempoutcome[which(Tempoutcome==0)])
+    mod = glm(as.formula(modformula),data=tempframe,family = "binomial")
+    convergemessage<-ifelse(mod$converged,"none","glm failed to converge")
+    cf<-summary(mod)$coef
+    outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
+    colnames(outtemp)<-c("coef","se","zval","pval")
+    outtemp<-cbind(n=NinAnalysis,n_cases=Ncases,n_controls=Ncontrols,outtemp,warnings=convergemessage)
+    
+  }
+  
+  return(outtemp) 
+  
+}
+
 runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjustmentvariables=NULL,
                            celladjust=NULL,Omega=NULL,phenoframe=NULL,robust=NULL,maxit=NULL){
-
-
 
   ## Reducing phenotype file to essential variables
   inanalysis<-phenoframe[,c("Basename",varofinterest,adjustmentvariables)]
@@ -1316,7 +1460,7 @@ runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjust
 
     modformula<-paste(modformula,"+ tempOmega",sep="")
 
-    if(class(Omega)=="matrix") {
+    if(class(Omega)[1]=="matrix") {
 
       rownames(Omega)<-rownames(inanalysis)
 
@@ -1325,187 +1469,46 @@ runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjust
   }
 
   ## Site-specific analysis
-  outresults<-plyr::adply(methyldat,1,function(x,vartype.=vartype,
-                                               varofinterest.=varofinterest,
-                                               robust.=robust,
-                                               celladjust.=celladjust,
-                                               Omega.=Omega,
-                                               maxit.=maxit){
-
-    ## Scaling DNA methylation if it is the exposure
-    if(vartype.=="OutcomeCont" | vartype.=="OutcomeBin"){
-      x<-x*100
-    }
-
-    tempframe<-inanalysis
-    tempframe$Methyl<-x
-
-    if(celladjust.) {
-      if(class(Omega.)!="matrix") tempframe$tempOmega<-Omega
-    }
-
-    tempframe<-na.omit(tempframe)
-    NinAnalysis<-nrow(tempframe)
-    if(vartype.=="ExposureCat") numbercategories<-length(levels(tempframe[,varofinterest.]))
-
-    if(celladjust.) {
-
-      if(class(Omega.)=="matrix") {
-
-        tempOmega<-Omega.[rownames(tempframe),]
-
-      }
-    }
-
-    if(vartype.=="OutcomeCont" | vartype.=="ExposureCont" | vartype.=="ExposureCat"){
-
-      if(robust.) {
-
-        tryfirst = try(rlm(as.formula(modformula),data=tempframe,maxit=maxit.),silent=TRUE)
-        if(length(tryfirst)>1) tryfirst<-tryfirst[1]
-
-        if(class(tryfirst) == "try-error"){
-
-          outtemp<-as.data.frame(matrix(NinAnalysis,nrow=1,dimnames=list(NULL,"n")))
-
-        } else {
-
-          mod<-rlm(as.formula(modformula),data=tempframe,maxit=maxit.)
-          trysecond = try(vcovHC(mod, type="HC0"),silent=TRUE)
-          if(length(trysecond)>1) trysecond<-trysecond[1]
-
-          if(class(trysecond) == "try-error"){
-
-            outtemp<-as.data.frame(matrix(NinAnalysis,nrow=1,dimnames=list(NULL,"n")))
-
-          } else {
-
-            mod = rlm(as.formula(modformula),data=tempframe,maxit=maxit.)
-            cf = lmtest::coeftest(mod, vcov=vcovHC(mod, type="HC0"))
-            convergemessage<-ifelse(mod$converged,"none","'rlm' failed to converge")
-
-            ## If categorical exposure
-            if(vartype.=="ExposureCat"){
-
-              ## if number of categories is greater than two, output all exposure of interest coefficients
-              if(numbercategories>2){
-
-                outtempv1<-as.matrix(cf[c(2:numbercategories),])
-                colnames(outtempv1)<-c("coef","se","zval","pval")
-
-                outtemp<-NULL
-                for(p in 1:nrow(outtempv1)){
-
-                  tempinfo<-outtempv1[p,]
-                  names(tempinfo)<-paste(colnames(outtempv1),rownames(outtempv1)[p],sep="_")
-                  outtemp<-c(outtemp,tempinfo)
-
-                }
-
-                outtemp<-as.data.frame(matrix(outtemp,nrow=1,dimnames =list(NULL,names(outtemp))))
-                outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
-
-              } else {
-
-                outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
-                colnames(outtemp)<-paste(c("coef","se","zval","pval"),rownames(cf)[2],sep="_")
-                outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
-
-              }
-
-
-            } else {
-
-              outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
-              colnames(outtemp)<-c("coef","se","zval","pval")
-              outtemp<-cbind(n=NinAnalysis,outtemp,warnings=convergemessage)
-
-            }
-
-
-          }
-
-        }
-
+  
+  if(runparallel){
+    
+    cl <- parallel::makeCluster(number_cores)
+    doParallel::registerDoParallel(cl)
+    parallel::clusterExport(cl,c("inanalysis","modformula","maxit","rlm","Omega","error_message",
+                       "vartype","celladjust","robust","varofinterest","running_DMP_analysis"))
+    
+    DMP_list_out <- parallel::parApply(cl,methyldat,1, function(x) running_DMP_analysis(x))
+    stopCluster(cl)
+    
+  } else {
+    
+    DMP_list_out <- apply(methyldat,1, function(x) running_DMP_analysis(x))
+    
+  }
+  
+  tempnumbercols<-sapply(DMP_list_out,length)
+  
+  if(diff(range(tempnumbercols))>0){
+    
+    colnamesnew<-DMP_list_out[which(tempnumbercols==max(tempnumbercols))]
+    colnamesnew<-colnames(colnamesnew[[1]])
+    tempinputframe<-as.data.frame(matrix(NA,ncol=length(colnamesnew),nrow=1))
+    colnames(tempinputframe)<-colnamesnew
+    tempinputframe$warnings<-'This model failed'
+    
+    DMP_list_out<-lapply(DMP_list_out,function(x){
+      templength<-ncol(x)
+      if(templength==min(tempnumbercols)){
+        tempinputframe
       } else {
-
-        tryfirst = try(lm(as.formula(modformula),data=tempframe),silent=TRUE)
-        if(length(tryfirst)>1) tryfirst<-tryfirst[1]
-
-        if(class(tryfirst) == "try-error"){
-
-          outtemp<-as.data.frame(matrix(NinAnalysis,nrow=1,dimnames=list(NULL,"n")))
-
-        } else {
-
-          mod = lm(as.formula(modformula),data=tempframe)
-          cf = summary(mod)$coef
-
-          ## If categorical exposure
-          if(vartype.=="ExposureCat"){
-
-            ## if number of categories is greater than two, output all exposure of interest coefficients
-            if(numbercategories>2){
-
-              outtempv1<-as.matrix(cf[c(2:numbercategories),])
-              colnames(outtempv1)<-c("coef","se","tval","pval")
-
-              outtemp<-NULL
-              for(p in 1:nrow(outtempv1)){
-
-                tempinfo<-outtempv1[p,]
-                names(tempinfo)<-paste(colnames(outtempv1),rownames(outtempv1)[p],sep="_")
-                outtemp<-c(outtemp,tempinfo)
-
-              }
-
-              outtemp<-as.data.frame(matrix(outtemp,nrow=1,dimnames =list(NULL,names(outtemp))))
-              outtemp<-cbind(n=NinAnalysis,outtemp)
-
-            } else {
-
-              outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
-              colnames(outtemp)<-paste(c("coef","se","tval","pval"),rownames(cf)[2],sep="_")
-              outtemp<-cbind(n=NinAnalysis,outtemp)
-
-            }
-
-
-          } else {
-
-            outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
-            colnames(outtemp)<-c("coef","se","tval","pval")
-            outtemp<-cbind(n=NinAnalysis,outtemp)
-
-          }
-
-
-        }
-
-
+        x
       }
-
-    }
-
-    if(vartype=="OutcomeBin"){
-
-      Tempoutcome<-tempframe[,varofinterest.]
-      Ncases<-length(Tempoutcome[which(Tempoutcome==1)])
-      Ncontrols<-length(Tempoutcome[which(Tempoutcome==0)])
-      mod = glm(as.formula(modformula),data=tempframe,family = "binomial")
-      convergemessage<-ifelse(mod$converged,"none","glm failed to converge")
-      cf<-summary(mod)$coef
-      outtemp<-as.data.frame(matrix(cf[2,],nrow=1,dimnames =list(NULL,colnames(cf))))
-      colnames(outtemp)<-c("coef","se","zval","pval")
-      outtemp<-cbind(n=NinAnalysis,n_cases=Ncases,n_controls=Ncontrols,outtemp,warnings=convergemessage)
-
-    }
-
-    return(outtemp)
-
-  })
-
-  colnames(outresults)[1]<-"CpG"
+    })
+    
+  }
+  
+  DMP_list_out<-do.call(rbind,DMP_list_out)
+  outresults<-cbind(CpG=rownames(DMP_list_out),DMP_list_out)
   return(outresults)
 
 }
