@@ -186,6 +186,7 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
   if(RunCellTypeAdjusted & is.null(Omega)) stop("Cannot run analysis adjusting for cell composition if Omega is null")
   if(RunCellTypeInteract & is.null(Omega)) stop("Cannot evaluate interaction with cell composition if Omega is null")
   if(RunAdjusted & is.null(adjustmentvariables)) stop("If RunAdjusted=TRUE, must specify adjustment variables")
+  if(runparallel & is.null(number_cores)) stop("If number_cores=TRUE, must specify the number of cores")
 
   if(!("Sex" %in% colnames(phenofinal))) stop("Variable 'Sex' is required and not in the dataframe phenofinal; see function arguments for specification")
   if(!("Basename" %in% colnames(phenofinal))) stop("Variable 'Basename' is required and not in the dataframe phenofinal")
@@ -516,79 +517,129 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
 
   #################################################################################
   # See if cell-mixtures are associated with phenotypes/covariates of interest:
-
-  Kchoose <- ncol(Omega)
-
-  if(is.matrix(Omega)){
-
-    if("Batch" %in% colnames(finalpheno)) {
-      subsetpheno <- finalpheno[,unique(c(adjustmentvariables,varofinterest,"Batch"))]
-    } else {
-      subsetpheno <- finalpheno[,unique(c(adjustmentvariables,varofinterest))]
-    }
-
-    table.type = ifelse(lapply(subsetpheno, class) %in% c("numeric", "integer"),"Continuous","Categorical")
-    table.type <- data.frame(Varname=colnames(subsetpheno),Type=table.type)
-
-    subsetpheno$Basename <- finalpheno$Basename
-    ## changing all variables to factors first before melting
-    subsetpheno[sapply(subsetpheno, function(x) !is.factor(x))] <- lapply(subsetpheno[sapply(subsetpheno, function(x) !is.factor(x))], as.factor)
-
-    subsetpheno<-reshape::melt(subsetpheno,id="Basename")
-    colnames(subsetpheno)[which(colnames(subsetpheno)=="variable")]<-"Varname"
-    colnames(subsetpheno)[which(colnames(subsetpheno)=="value")]<-"CharValue"
-    subsetpheno<-merge(subsetpheno,table.type,by="Varname")
-    OmegaDatFrame<-as.data.frame(Omega)
-    OmegaDatFrame$Basename<-rownames(Omega)
-    OmegaDatFrame<-reshape::melt(OmegaDatFrame,id="Basename")
-    subsetpheno<-merge(subsetpheno,OmegaDatFrame,by="Basename")
-
-    subsetpheno_cat<-subsetpheno[which(subsetpheno$Type=="Categorical"),]
-    if(nrow(subsetpheno_cat)>0){
-
-      subsetpheno_cat$CharValue<-as.factor(subsetpheno_cat$CharValue)
-      Cat.Table.p<-plyr::ddply(subsetpheno_cat,.(Varname,variable),function(x) {
-        data.frame(Pval_KW=kruskal.test(x$value,x$CharValue)$p.value)
-      })
-
-      p<-ggplot(subsetpheno_cat,aes(CharValue,value))+
-        geom_jitter(alpha=0.6)+
-        geom_boxplot(outlier.shape=NA,fill=NA)+
-        facet_grid(variable~Varname,scales="free")+
-        theme_bw()+ylab("")+xlab("")+
-        theme(axis.title=element_text(face="bold",size=14))
-
-      ggsave(filename=paste(cohort,"_",analysisdate,"_CatCovariate_CellMix_Associations.png",sep=""),
-             plot=p,width=10,height=10,units="in")
-      write.csv(Cat.Table.p, paste(cohort,"_",analysisdate,"_CatCovariate_CellMix_Associations.csv",sep=""), na="NA")
-
-    }
-
-    subsetpheno_cont<-subsetpheno[which(subsetpheno$Type=="Continuous"),]
-    if(nrow(subsetpheno_cont)>0){
-
+  
+  if(!is.null(Omega)) {
+    
+    if(is.matrix(Omega)){
+      
+      if("Batch" %in% colnames(finalpheno)) {
+        subsetpheno <- finalpheno[,unique(c(adjustmentvariables,varofinterest,"Batch"))]
+      } else {
+        subsetpheno <- finalpheno[,unique(c(adjustmentvariables,varofinterest))]
+      }
+      
+      table.type = ifelse(lapply(subsetpheno, class) %in% c("numeric", "integer"),"Continuous","Categorical")
+      table.type <- data.frame(Varname=colnames(subsetpheno),Type=table.type)
+      
+      subsetpheno$Basename <- finalpheno$Basename
       ## changing all variables to factors first before melting
-      subsetpheno_cont$CharValue<-as.numeric(as.character(subsetpheno_cont$CharValue))
-      Cont.Table.p<-plyr::ddply(subsetpheno_cont,.(Varname,variable),function(x){
-        data.frame(Pval_Tau=cor.test(x$value,x$CharValue,method="kendall")$p.value)
-      })
+      subsetpheno[sapply(subsetpheno, function(x) !is.factor(x))] <- lapply(subsetpheno[sapply(subsetpheno, function(x) !is.factor(x))], as.factor)
+      
+      subsetpheno<-reshape::melt(subsetpheno,id="Basename")
+      colnames(subsetpheno)[which(colnames(subsetpheno)=="variable")]<-"Varname"
+      colnames(subsetpheno)[which(colnames(subsetpheno)=="value")]<-"CharValue"
+      subsetpheno<-merge(subsetpheno,table.type,by="Varname")
+      OmegaDatFrame<-as.data.frame(Omega)
+      OmegaDatFrame$Basename<-rownames(Omega)
+      OmegaDatFrame<-reshape::melt(OmegaDatFrame,id="Basename")
+      subsetpheno<-merge(subsetpheno,OmegaDatFrame,by="Basename")
+      
+      subsetpheno_cat<-subsetpheno[which(subsetpheno$Type=="Categorical"),]
+      if(nrow(subsetpheno_cat)>0){
+        
+        error_message_cat <- function() data.frame(cat_name=NA,coef=NA,se=NA,pval=NA,warnings="This model failed")
+        
+        subsetpheno_cat$CharValue<-as.factor(subsetpheno_cat$CharValue)
+        Cat.Table.p<-plyr::ddply(subsetpheno_cat,.(Varname,variable),function(x) {
 
-      p<-ggplot(subsetpheno_cont,aes(CharValue,value))+
-        geom_point()+
-        stat_smooth(method="lm",se=FALSE)+
-        facet_grid(variable~Varname,scales="free")+
-        theme_bw()+ylab("")+xlab("")+
-        theme(axis.title=element_text(face="bold",size=14))
-
-      ggsave(filename=paste(cohort,"_",analysisdate,"_ContCovariate_CellMix_Associations.png",sep=""),
-             plot=p,width=10,height=10,units="in")
-      write.csv(Cont.Table.p, paste(cohort,"_",analysisdate,"_ContCovariate_CellMix_Associations.csv",sep=""), na="NA")
-
+          tryCatch(
+            
+            {
+              
+              tempframe<-data.frame(CellCompEst=x$value,CatVar=as.factor(as.character(x$CharValue)))
+              mod <- rlm(CellCompEst~CatVar,data=tempframe)
+              convergemessage<-ifelse(mod$converged,"none","'rlm' failed to converge")
+              
+              modout <- lmtest::coeftest(mod, vcov=vcovHC(mod, type="HC0"))
+              modout <- modout[,]
+              modout<-as.data.frame(modout)
+              colnames(modout)<-c("coef","se","teststat","pval")
+              modout$warnings<-convergemessage
+              modout<-modout[2:nrow(modout),]
+              modout<-cbind(cat_name=rownames(modout),modout)
+              modout
+              
+            },
+            
+            error = function(e) error_message_cat()
+            
+          )
+          
+        })
+        
+        p<-ggplot(subsetpheno_cat,aes(CharValue,value))+
+          geom_jitter(alpha=0.6)+
+          geom_boxplot(outlier.shape=NA,fill=NA)+
+          facet_grid(variable~Varname,scales="free")+
+          theme_bw()+ylab("")+xlab("")+
+          theme(axis.title=element_text(face="bold",size=14))
+        
+        ggsave(filename=paste(cohort,"_",analysisdate,"_CatCovariate_CellMix_Associations.png",sep=""),
+               plot=p,width=10,height=10,units="in")
+        write.csv(Cat.Table.p, paste(cohort,"_",analysisdate,"_CatCovariate_CellMix_Associations.csv",sep=""), na="NA")
+        
+      }
+      
+      subsetpheno_cont<-subsetpheno[which(subsetpheno$Type=="Continuous"),]
+      if(nrow(subsetpheno_cont)>0){
+        
+        error_message_cont <- function() data.frame(coef=NA,se=NA,pval=NA,warnings="This model failed")
+        
+        ## changing all variables to factors first before melting
+        subsetpheno_cont$CharValue<-as.numeric(as.character(subsetpheno_cont$CharValue))
+        Cont.Table.p<-plyr::ddply(subsetpheno_cont,.(Varname,variable),function(x){
+          
+          tryCatch(
+            
+            {
+              
+              tempframe<-data.frame(CellCompEst=x$value,CharVal=x$CharValue)
+              
+              mod <- rlm(CellCompEst~CharVal,data=tempframe,maxit=maxit)
+              convergemessage<-ifelse(mod$converged,"none","'rlm' failed to converge")
+              
+              modout <- lmtest::coeftest(mod, vcov=vcovHC(mod, type="HC0"))
+              modout <- modout[,]
+              modout<-as.data.frame(modout)
+              colnames(modout)<-c("coef","se","teststat","pval")
+              modout$warnings<-convergemessage
+              modout[2,]
+              
+            },
+            
+            error = function(e) error_message_cont()
+            
+          )
+          
+        })
+        
+        p<-ggplot(subsetpheno_cont,aes(CharValue,value))+
+          geom_point()+
+          stat_smooth(method="lm",se=FALSE)+
+          facet_grid(variable~Varname,scales="free")+
+          theme_bw()+ylab("")+xlab("")+
+          theme(axis.title=element_text(face="bold",size=14))
+        
+        ggsave(filename=paste(cohort,"_",analysisdate,"_ContCovariate_CellMix_Associations.png",sep=""),
+               plot=p,width=10,height=10,units="in")
+        write.csv(Cont.Table.p, paste(cohort,"_",analysisdate,"_ContCovariate_CellMix_Associations.csv",sep=""), na="NA")
+        
+      }
+      
     }
-
+    
   }
-
-
+  
   #################################################################################
   # R-code for running models
 
@@ -602,62 +653,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
     ## Unadjusted Models
     tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,robust=robust,
                               varofinterest=varofinterest,adjustmentvariables=NULL,
-                              celladjust=FALSE,Omega=NULL,phenoframe=finalpheno,maxit=maxit)
-
-    if(length(grep("pval",colnames(tempout)))>0){
-
-      if(vartype=="ExposureCat"){
-
-        pvalindexes<-grep("pval",colnames(tempout))
-        catnames<-colnames(tempout)[pvalindexes]
-        catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-        lambda<-as.list(rep(NA,length(catnames)))
-        names(lambda)<-catnames
-
-        for(i in catnames){
-
-          tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-          colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-          templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-            qchisq(0.5, 1)
-          lambda[i]<-templambda
-          tempoutplots<-na.omit(tempoutv2)
-
-          if(nrow(tempoutplots)>20){
-            runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                        finalpheno=finalpheno,title=paste("Unadjusted_Analysis",i,sep="_"),
-                        varofinterest=varofinterest,vartype=vartype,
-                        cohort=cohort,analysisdate=analysisdate)
-          }
-
-        }
-
-      } else {
-
-        lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-          qchisq(0.5, 1)
-
-        tempoutplots<-na.omit(tempout)
-        if(nrow(tempoutplots)>20){
-          runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                      finalpheno=finalpheno,title="Unadjusted_Analysis",
-                      varofinterest=varofinterest,vartype=vartype,
-                      cohort=cohort,analysisdate=analysisdate)
-        }
-
-      }
-
-      alldataout$Unadjusted<-tempout
-      alllambda$Unadjusted<-lambda
-
-    } else {
-
-      alldataout$Unadjusted<-NA
-      alllambda$Unadjusted<-NA
-
-    }
+                              celladjust=FALSE,Omega=NULL,phenoframe=finalpheno,maxit=maxit,
+                              runparallel=runparallel,number_cores=number_cores)
+    
+    tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Unadjusted_Analysis",
+                                              vartype=vartype,finalpheno=finalpheno,
+                                              annotdat=annotdat,betafinal=betafinal,
+                                              varofinterest=varofinterest,
+                                              cohort=cohort,analysisdate=analysisdate)
+    
+    alldataout$Unadjusted<-tempout_organizing$ModelResults
+    alllambda$Unadjusted<-tempout_organizing$lambda
 
   }
 
@@ -669,62 +675,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
     cat("  Adjustment variables:",adjustmentvariables,"\n")
     tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,robust=robust,varofinterest=varofinterest,
                               adjustmentvariables=adjustmentvariables,
-                              celladjust=FALSE,Omega=NULL,phenoframe=finalpheno,maxit=maxit)
-
-    if(length(grep("pval",colnames(tempout)))>0){
-
-      if(vartype=="ExposureCat"){
-
-        pvalindexes<-grep("pval",colnames(tempout))
-        catnames<-colnames(tempout)[pvalindexes]
-        catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-        lambda<-as.list(rep(NA,length(catnames)))
-        names(lambda)<-catnames
-
-        for(i in catnames){
-
-          tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-          colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-          templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-            qchisq(0.5, 1)
-          lambda[i]<-templambda
-          tempoutplots<-na.omit(tempoutv2)
-
-          if(nrow(tempoutplots)>20){
-            runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                        finalpheno=finalpheno,title=paste("Adjusted_Analysis",i,sep="_"),
-                        varofinterest=varofinterest,vartype=vartype,
-                        cohort=cohort,analysisdate=analysisdate)
-          }
-
-        }
-
-      } else {
-
-        lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-          qchisq(0.5, 1)
-
-        tempoutplots<-na.omit(tempout)
-        if(nrow(tempoutplots)>20){
-          runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                      finalpheno=finalpheno,title="Adjusted_Analysis",
-                      varofinterest=varofinterest,vartype=vartype,
-                      cohort=cohort,analysisdate=analysisdate)
-        }
-
-      }
-
-      alldataout$Adjusted<-tempout
-      alllambda$Adjusted<-lambda
-
-    } else {
-
-      alldataout$Adjusted<-NA
-      alllambda$Adjusted<-NA
-
-    }
+                              celladjust=FALSE,Omega=NULL,phenoframe=finalpheno,maxit=maxit,
+                              runparallel=runparallel,number_cores=number_cores)
+    
+    tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Adjusted_Analysis",
+                                              vartype=vartype,finalpheno=finalpheno,
+                                              annotdat=annotdat,betafinal=betafinal,
+                                              varofinterest=varofinterest,
+                                              cohort=cohort,analysisdate=analysisdate)
+    
+    alldataout$Adjusted<-tempout_organizing$ModelResults
+    alllambda$Adjusted<-tempout_organizing$lambda
 
   }
 
@@ -733,7 +694,7 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
 
     ## Adjusted model with Cell Type
     cat("Running Adjusted Models with Cell Type...","\n")
-    if(class(Omega)=="matrix"){
+    if(class(Omega)[1]=="matrix"){
       cat("  Number of cell types:",ncol(Omega),"\n")
     } else {
       cat("  Number of cell types:",1,"\n")
@@ -741,62 +702,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
 
     tempout<-runmodelfunction(methyldat=betafinal,vartype=vartype,robust=robust,varofinterest=varofinterest,
                               adjustmentvariables=adjustmentvariables,
-                              celladjust=TRUE,Omega=Omega,phenoframe=finalpheno,maxit=maxit)
-
-    if(length(grep("pval",colnames(tempout)))>0){
-
-      if(vartype=="ExposureCat"){
-
-        pvalindexes<-grep("pval",colnames(tempout))
-        catnames<-colnames(tempout)[pvalindexes]
-        catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-        lambda<-as.list(rep(NA,length(catnames)))
-        names(lambda)<-catnames
-
-        for(i in catnames){
-
-          tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-          colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-          templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-            qchisq(0.5, 1)
-          lambda[i]<-templambda
-          tempoutplots<-na.omit(tempoutv2)
-
-          if(nrow(tempoutplots)>20){
-            runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                        finalpheno=finalpheno,title=paste("Adjusted_Analysis_with_Cell_Type",i,sep="_"),
-                        varofinterest=varofinterest,vartype=vartype,
-                        cohort=cohort,analysisdate=analysisdate)
-          }
-
-        }
-
-      } else {
-
-        lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-          qchisq(0.5, 1)
-
-        tempoutplots<-na.omit(tempout)
-        if(nrow(tempoutplots)>20){
-          runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                      finalpheno=finalpheno,title="Adjusted_Analysis_with_Cell_Type",
-                      varofinterest=varofinterest,vartype=vartype,
-                      cohort=cohort,analysisdate=analysisdate)
-        }
-
-      }
-
-      alldataout$AdjustedwithCellType<-tempout
-      alllambda$AdjustedwithCellType<-lambda
-
-    } else {
-
-      alldataout$AdjustedwithCellType<-NA
-      alllambda$AdjustedwithCellType<-NA
-
-    }
+                              celladjust=TRUE,Omega=Omega,phenoframe=finalpheno,maxit=maxit,
+                              runparallel=runparallel,number_cores=number_cores)
+    
+    tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Adjusted_Analysis_with_Cell_Type",
+                                              vartype=vartype,finalpheno=finalpheno,
+                                              annotdat=annotdat,betafinal=betafinal,
+                                              varofinterest=varofinterest,
+                                              cohort=cohort,analysisdate=analysisdate)
+    
+    alldataout$AdjustedwithCellType<-tempout_organizing$ModelResults
+    alllambda$AdjustedwithCellType<-tempout_organizing$lambda
 
   }
 
@@ -824,7 +740,7 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
       tempsexbetas<-betafinal[,which(finalpheno$Sex=="Female")]
       tempsexpheno<-finalpheno[which(finalpheno$Sex=="Female"),]
 
-      if(class(Omega)=="matrix"){
+      if(class(Omega)[1]=="matrix"){
         tempsexomega<-Omega[which(finalpheno$Sex=="Female"),]
       } else {
         tempsexomega<-Omega[which(finalpheno$Sex=="Female")]
@@ -837,63 +753,18 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
 
         tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=NULL,
-                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
-
-        if(length(grep("pval",colnames(tempout)))>0){
-
-          if(vartype=="ExposureCat"){
-
-            pvalindexes<-grep("pval",colnames(tempout))
-            catnames<-colnames(tempout)[pvalindexes]
-            catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-            lambda<-as.list(rep(NA,length(catnames)))
-            names(lambda)<-catnames
-
-            for(i in catnames){
-
-              tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-              colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-              templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-                qchisq(0.5, 1)
-              lambda[i]<-templambda
-              tempoutplots<-na.omit(tempoutv2)
-
-              if(nrow(tempoutplots)>20){
-                runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                            finalpheno=finalpheno,title=paste("Unadjusted_Analysis_Females",i,sep="_"),
-                            varofinterest=varofinterest,vartype=vartype,
-                            cohort=cohort,analysisdate=analysisdate)
-              }
-
-            }
-
-          } else {
-
-            lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-              qchisq(0.5, 1)
-
-            tempoutplots<-na.omit(tempout)
-            if(nrow(tempoutplots)>20){
-              runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                          finalpheno=finalpheno,title="Unadjusted_Analysis_Females",
-                          varofinterest=varofinterest,vartype=vartype,
-                          cohort=cohort,analysisdate=analysisdate)
-            }
-
-          }
-
-          alldataout$UnadjustedFemales<-tempout
-          alllambda$UnadjustedFemales<-lambda
-
-        } else {
-
-          alldataout$UnadjustedFemales<-NA
-          alllambda$UnadjustedFemales<-NA
-
-        }
-
+                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit,
+                                  runparallel=runparallel,number_cores=number_cores)
+        
+        tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Unadjusted_Analysis_Females",
+                                                  vartype=vartype,finalpheno=tempsexpheno,
+                                                  annotdat=annotdat,betafinal=tempsexbetas,
+                                                  varofinterest=varofinterest,
+                                                  cohort=cohort,analysisdate=analysisdate)
+        
+        alldataout$UnadjustedFemales<-tempout_organizing$ModelResults
+        alllambda$UnadjustedFemales<-tempout_organizing$lambda
+        
       }
 
       if(RunAdjusted){
@@ -903,62 +774,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
 
         tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
-                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
-
-        if(length(grep("pval",colnames(tempout)))>0){
-
-          if(vartype=="ExposureCat"){
-
-            pvalindexes<-grep("pval",colnames(tempout))
-            catnames<-colnames(tempout)[pvalindexes]
-            catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-            lambda<-as.list(rep(NA,length(catnames)))
-            names(lambda)<-catnames
-
-            for(i in catnames){
-
-              tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-              colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-              templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-                qchisq(0.5, 1)
-              lambda[i]<-templambda
-              tempoutplots<-na.omit(tempoutv2)
-
-              if(nrow(tempoutplots)>20){
-                runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                            finalpheno=finalpheno,title=paste("Adjusted_Analysis_Females",i,sep="_"),
-                            varofinterest=varofinterest,vartype=vartype,
-                            cohort=cohort,analysisdate=analysisdate)
-              }
-
-            }
-
-          } else {
-
-            lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-              qchisq(0.5, 1)
-
-            tempoutplots<-na.omit(tempout)
-            if(nrow(tempoutplots)>20){
-              runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                          finalpheno=finalpheno,title="Adjusted_Analysis_Females",
-                          varofinterest=varofinterest,vartype=vartype,
-                          cohort=cohort,analysisdate=analysisdate)
-            }
-
-          }
-
-          alldataout$AdjustedFemales<-tempout
-          alllambda$AdjustedFemales<-lambda
-
-        } else {
-
-          alldataout$AdjustedFemales<-NA
-          alllambda$AdjustedFemales<-NA
-
-        }
+                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit,
+                                  runparallel=runparallel,number_cores=number_cores)
+        
+        tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Adjusted_Analysis_Females",
+                                                  vartype=vartype,finalpheno=tempsexpheno,
+                                                  annotdat=annotdat,betafinal=tempsexbetas,
+                                                  varofinterest=varofinterest,
+                                                  cohort=cohort,analysisdate=analysisdate)
+        
+        alldataout$AdjustedFemales<-tempout_organizing$ModelResults
+        alllambda$AdjustedFemales<-tempout_organizing$lambda
 
       }
 
@@ -968,65 +794,20 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
         ## Adjusted model with Cell Type
         tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
-                                  celladjust=TRUE,Omega=tempsexomega,phenoframe=tempsexpheno,maxit=maxit)
+                                  celladjust=TRUE,Omega=tempsexomega,phenoframe=tempsexpheno,maxit=maxit,
+                                  runparallel=runparallel,number_cores=number_cores)
 
-        if(length(grep("pval",colnames(tempout)))>0){
-
-          if(vartype=="ExposureCat"){
-
-            pvalindexes<-grep("pval",colnames(tempout))
-            catnames<-colnames(tempout)[pvalindexes]
-            catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-            lambda<-as.list(rep(NA,length(catnames)))
-            names(lambda)<-catnames
-
-            for(i in catnames){
-
-              tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-              colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-              templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-                qchisq(0.5, 1)
-              lambda[i]<-templambda
-              tempoutplots<-na.omit(tempoutv2)
-
-              if(nrow(tempoutplots)>20){
-                runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                            finalpheno=finalpheno,title=paste("Adjusted_Analysis_with_Cell_Type_Females",i,sep="_"),
-                            varofinterest=varofinterest,vartype=vartype,
-                            cohort=cohort,analysisdate=analysisdate)
-              }
-
-            }
-
-          } else {
-
-            lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-              qchisq(0.5, 1)
-
-            tempoutplots<-na.omit(tempout)
-            if(nrow(tempoutplots)>20){
-              runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                          finalpheno=finalpheno,title="Adjusted_Analysis_with_Cell_Type_Females",
-                          varofinterest=varofinterest,vartype=vartype,
-                          cohort=cohort,analysisdate=analysisdate)
-            }
-
-          }
-
-          alldataout$AdjustedwithCellTypeFemales<-tempout
-          alllambda$AdjustedwithCellTypeFemales<-lambda
-
-        } else {
-
-          alldataout$AdjustedwithCellTypeFemales<-NA
-          alllambda$AdjustedwithCellTypeFemales<-NA
-
-        }
+        tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Adjusted_Analysis_with_Cell_Type_Females",
+                                                  vartype=vartype,finalpheno=tempsexpheno,
+                                                  annotdat=annotdat,betafinal=tempsexbetas,
+                                                  varofinterest=varofinterest,
+                                                  cohort=cohort,analysisdate=analysisdate)
+        
+        alldataout$AdjustedwithCellTypeFemales<-tempout_organizing$ModelResults
+        alllambda$AdjustedwithCellTypeFemales<-tempout_organizing$lambda
 
       }
-
+      
     }
 
     if(numberM>=10){
@@ -1034,7 +815,7 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
       tempsexbetas<-betafinal[,which(finalpheno$Sex=="Male")]
       tempsexpheno<-finalpheno[which(finalpheno$Sex=="Male"),]
 
-      if(class(Omega)=="matrix"){
+      if(class(Omega)[1]=="matrix"){
         tempsexomega<-Omega[which(finalpheno$Sex=="Male"),]
       } else {
         tempsexomega<-Omega[which(finalpheno$Sex=="Male")]
@@ -1046,62 +827,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
         ## Unadjusted model
         tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=NULL,
-                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
-
-        if(length(grep("pval",colnames(tempout)))>0){
-
-          if(vartype=="ExposureCat"){
-
-            pvalindexes<-grep("pval",colnames(tempout))
-            catnames<-colnames(tempout)[pvalindexes]
-            catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-            lambda<-as.list(rep(NA,length(catnames)))
-            names(lambda)<-catnames
-
-            for(i in catnames){
-
-              tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-              colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-              templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-                qchisq(0.5, 1)
-              lambda[i]<-templambda
-              tempoutplots<-na.omit(tempoutv2)
-
-              if(nrow(tempoutplots)>20){
-                runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                            finalpheno=finalpheno,title=paste("Unadjusted_Analysis_Males",i,sep="_"),
-                            varofinterest=varofinterest,vartype=vartype,
-                            cohort=cohort,analysisdate=analysisdate)
-              }
-
-            }
-
-          } else {
-
-            lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-              qchisq(0.5, 1)
-
-            tempoutplots<-na.omit(tempout)
-            if(nrow(tempoutplots)>20){
-              runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                          finalpheno=finalpheno,title="Unadjusted_Analysis_Males",
-                          varofinterest=varofinterest,vartype=vartype,
-                          cohort=cohort,analysisdate=analysisdate)
-            }
-
-          }
-
-          alldataout$UnadjustedMales<-tempout
-          alllambda$UnadjustedMales<-lambda
-
-        } else {
-
-          alldataout$UnadjustedMales<-NA
-          alllambda$UnadjustedMales<-NA
-
-        }
+                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit,
+                                  runparallel=runparallel,number_cores=number_cores)
+        
+        tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Unadjusted_Analysis_Males",
+                                                  vartype=vartype,finalpheno=tempsexpheno,
+                                                  annotdat=annotdat,betafinal=tempsexbetas,
+                                                  varofinterest=varofinterest,
+                                                  cohort=cohort,analysisdate=analysisdate)
+        
+        alldataout$UnadjustedMales<-tempout_organizing$ModelResults
+        alllambda$UnadjustedMales<-tempout_organizing$lambda
 
       }
 
@@ -1111,62 +847,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
         ## Adjusted model
         tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
-                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit)
-
-        if(length(grep("pval",colnames(tempout)))>0){
-
-          if(vartype=="ExposureCat"){
-
-            pvalindexes<-grep("pval",colnames(tempout))
-            catnames<-colnames(tempout)[pvalindexes]
-            catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-            lambda<-as.list(rep(NA,length(catnames)))
-            names(lambda)<-catnames
-
-            for(i in catnames){
-
-              tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-              colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-              templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-                qchisq(0.5, 1)
-              lambda[i]<-templambda
-              tempoutplots<-na.omit(tempoutv2)
-
-              if(nrow(tempoutplots)>20){
-                runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                            finalpheno=finalpheno,title=paste("Adjusted_Analysis_Males",i,sep="_"),
-                            varofinterest=varofinterest,vartype=vartype,
-                            cohort=cohort,analysisdate=analysisdate)
-              }
-
-            }
-
-          } else {
-
-            lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-              qchisq(0.5, 1)
-
-            tempoutplots<-na.omit(tempout)
-            if(nrow(tempoutplots)>20){
-              runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                          finalpheno=finalpheno,title="Adjusted_Analysis_Males",
-                          varofinterest=varofinterest,vartype=vartype,
-                          cohort=cohort,analysisdate=analysisdate)
-            }
-
-          }
-
-          alldataout$AdjustedMales<-tempout
-          alllambda$AdjustedMales<-lambda
-
-        } else {
-
-          alldataout$AdjustedMales<-NA
-          alllambda$AdjustedMales<-NA
-
-        }
+                                  celladjust=FALSE,Omega=NULL,phenoframe=tempsexpheno,maxit=maxit,
+                                  runparallel=runparallel,number_cores=number_cores)
+        
+        tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Adjusted_Analysis_Males",
+                                                  vartype=vartype,finalpheno=tempsexpheno,
+                                                  annotdat=annotdat,betafinal=tempsexbetas,
+                                                  varofinterest=varofinterest,
+                                                  cohort=cohort,analysisdate=analysisdate)
+        
+        alldataout$AdjustedMales<-tempout_organizing$ModelResults
+        alllambda$AdjustedMales<-tempout_organizing$lambda
 
       }
 
@@ -1176,62 +867,17 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
         ## Adjusted model with Cell Type
         tempout<-runmodelfunction(methyldat=tempsexbetas,vartype=vartype,robust=robust,varofinterest=varofinterest,
                                   adjustmentvariables=sexstratifiedadjustmentvars,
-                                  celladjust=TRUE,Omega=tempsexomega,phenoframe=tempsexpheno,maxit=maxit)
-
-        if(length(grep("pval",colnames(tempout)))>0){
-
-          if(vartype=="ExposureCat"){
-
-            pvalindexes<-grep("pval",colnames(tempout))
-            catnames<-colnames(tempout)[pvalindexes]
-            catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
-
-            lambda<-as.list(rep(NA,length(catnames)))
-            names(lambda)<-catnames
-
-            for(i in catnames){
-
-              tempoutv2<-tempout[,c("CpG","n",colnames(tempout)[grep(i,colnames(tempout))])]
-              colnames(tempoutv2)<-sapply(strsplit(colnames(tempoutv2),"_"), function(x) x[1])
-
-              templambda = qchisq(median(tempoutv2$pval,na.rm=T), df = 1, lower.tail = F)/
-                qchisq(0.5, 1)
-              lambda[i]<-templambda
-              tempoutplots<-na.omit(tempoutv2)
-
-              if(nrow(tempoutplots)>20){
-                runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                            finalpheno=finalpheno,title=paste("Adjusted_Analysis_with_Cell_Type_Males",i,sep="_"),
-                            varofinterest=varofinterest,vartype=vartype,
-                            cohort=cohort,analysisdate=analysisdate)
-              }
-
-            }
-
-          } else {
-
-            lambda = qchisq(median(tempout$pval,na.rm=T), df = 1, lower.tail = F)/
-              qchisq(0.5, 1)
-
-            tempoutplots<-na.omit(tempout)
-            if(nrow(tempoutplots)>20){
-              runallplots(fitinfo=tempoutplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
-                          finalpheno=finalpheno,title="Adjusted_Analysis_with_Cell_Type_Males",
-                          varofinterest=varofinterest,vartype=vartype,
-                          cohort=cohort,analysisdate=analysisdate)
-            }
-
-          }
-
-          alldataout$AdjustedwithCellTypeMales<-tempout
-          alllambda$AdjustedwithCellTypeMales<-lambda
-
-        } else {
-
-          alldataout$AdjustedwithCellTypeMales<-NA
-          alllambda$AdjustedwithCellTypeMales<-NA
-
-        }
+                                  celladjust=TRUE,Omega=tempsexomega,phenoframe=tempsexpheno,maxit=maxit,
+                                  runparallel=runparallel,number_cores=number_cores)
+        
+        tempout_organizing<-organizing_DMP_output(ModelResults=tempout,ModelName="Adjusted_Analysis_with_Cell_Type_Males",
+                                                  vartype=vartype,finalpheno=tempsexpheno,
+                                                  annotdat=annotdat,betafinal=tempsexbetas,
+                                                  varofinterest=varofinterest,
+                                                  cohort=cohort,analysisdate=analysisdate)
+        
+        alldataout$AdjustedwithCellTypeMales<-tempout_organizing$ModelResults
+        alllambda$AdjustedwithCellTypeMales<-tempout_organizing$lambda
 
       }
 
@@ -1299,9 +945,71 @@ dataAnalysis<-function(phenofinal=NULL,betafinal=NULL,array="EPIC",
 }
 
 
+organizing_DMP_output<-function(ModelResults=NULL,ModelName=NULL,vartype=vartype,finalpheno=finalpheno,
+                                annotdat=annotdat,betafinal=betafinal,varofinterest=varofinterest,
+                                cohort=cohort,analysisdate=analysisdate){
+  
+  if(length(grep("pval",colnames(ModelResults)))>0){
+    
+    if(vartype=="ExposureCat"){
+      
+      pvalindexes<-grep("pval",colnames(ModelResults))
+      catnames<-colnames(ModelResults)[pvalindexes]
+      catnames<-sapply(strsplit(catnames,"_"), function(x) x[2])
+      
+      lambda<-as.list(rep(NA,length(catnames)))
+      names(lambda)<-catnames
+      
+      for(i in catnames){
+        
+        ModelResultsv2<-ModelResults[,c("CpG","n",colnames(ModelResults)[grep(i,colnames(ModelResults),fixed = TRUE)])]
+        colnames(ModelResultsv2)<-sapply(strsplit(colnames(ModelResultsv2),"_"), function(x) x[1])
+        
+        templambda = qchisq(median(ModelResultsv2$pval,na.rm=T), df = 1, lower.tail = F)/
+          qchisq(0.5, 1)
+        lambda[i]<-templambda
+        ModelResultsplots<-na.omit(ModelResultsv2)
+        
+        if(nrow(ModelResultsplots)>20){
+          runallplots(fitinfo=ModelResultsplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
+                      finalpheno=finalpheno,title=paste(ModelName,i,sep="_"),
+                      varofinterest=varofinterest,vartype=vartype,
+                      cohort=cohort,analysisdate=analysisdate)
+        }
+        
+      }
+      
+    } else {
+      
+      lambda = qchisq(median(ModelResults$pval,na.rm=T), df = 1, lower.tail = F)/
+        qchisq(0.5, 1)
+      
+      ModelResultsplots<-na.omit(ModelResults)
+      if(nrow(ModelResultsplots)>20){
+        runallplots(fitinfo=ModelResultsplots,ntop=20,annotdat=annotdat,betafinal=betafinal,
+                    finalpheno=finalpheno,title=ModelName,
+                    varofinterest=varofinterest,vartype=vartype,
+                    cohort=cohort,analysisdate=analysisdate)
+      }
+      
+    }
+    
+    outputlist<-list(ModelResults=ModelResults,lambda=lambda)
+    
+  } else {
+    
+    outputlist<-list(ModelResults=NA,lambda=NA)
+    
+  }
+  
+  return(outputlist)
+  
+}
+
 error_message <- function() 'This model failed'
 
-running_DMP_analysis<-function(x){
+running_DMP_analysis<-function(x,inanalysis=NULL,Omega=NULL, modformula=NULL,vartype=NULL,
+                               celladjust=NULL,robust=NULL,varofinterest=NULL,maxit=NULL){
   
   ## Scaling DNA methylation if it is the exposure
   if(vartype=="OutcomeCont" | vartype=="OutcomeBin"){
@@ -1437,7 +1145,8 @@ running_DMP_analysis<-function(x){
 }
 
 runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjustmentvariables=NULL,
-                           celladjust=NULL,Omega=NULL,phenoframe=NULL,robust=NULL,maxit=NULL){
+                           celladjust=NULL,Omega=NULL,phenoframe=NULL,robust=NULL,maxit=NULL,
+                           runparallel=NULL,number_cores=NULL){
 
   ## Reducing phenotype file to essential variables
   inanalysis<-phenoframe[,c("Basename",varofinterest,adjustmentvariables)]
@@ -1475,14 +1184,20 @@ runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjust
     cl <- parallel::makeCluster(number_cores)
     doParallel::registerDoParallel(cl)
     parallel::clusterExport(cl,c("inanalysis","modformula","maxit","rlm","Omega","error_message",
-                       "vartype","celladjust","robust","varofinterest","running_DMP_analysis"))
+                       "vartype","celladjust","robust","varofinterest","running_DMP_analysis","vcovHC","coeftest"))
     
-    DMP_list_out <- parallel::parApply(cl,methyldat,1, function(x) running_DMP_analysis(x))
+    DMP_list_out <- parallel::parApply(cl,methyldat,1, function(x) running_DMP_analysis(x=x,inanalysis=inanalysis,Omega=Omega,
+                                                                                        modformula=modformula,vartype=vartype,
+                                                                                        celladjust=celladjust,robust=robust,
+                                                                                        varofinterest=varofinterest,maxit=maxit))
     stopCluster(cl)
     
   } else {
     
-    DMP_list_out <- apply(methyldat,1, function(x) running_DMP_analysis(x))
+    DMP_list_out <- apply(methyldat,1, function(x) running_DMP_analysis(x,inanalysis=inanalysis,Omega=Omega,
+                                                                        modformula=modformula,vartype=vartype,
+                                                                        celladjust=celladjust,robust=robust,
+                                                                        varofinterest=varofinterest,maxit=maxit))
     
   }
   
@@ -1507,12 +1222,15 @@ runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjust
     
   }
   
-  DMP_list_out<-do.call(rbind,DMP_list_out)
-  outresults<-cbind(CpG=rownames(DMP_list_out),DMP_list_out)
+  outresults<-data.frame(matrix(NA,ncol=length(DMP_list_out[[1]]),nrow=length(DMP_list_out)))
+  colnames(outresults)<-colnames(DMP_list_out[[1]])
+  rownames(outresults)<-names(DMP_list_out)
+  for(i in 1:ncol(outresults)) outresults[,i]<-unlist(lapply(DMP_list_out,function(x)x[i]))
+  outresults<-cbind(CpG=rownames(outresults),outresults)
+  
   return(outresults)
 
 }
-
 
 qqnormplot<-function(fitinfo=NULL,title=NULL){
   o <- -log10(sort(fitinfo$pval,decreasing=F))

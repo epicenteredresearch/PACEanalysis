@@ -372,6 +372,7 @@ ExploratoryDataAnalysis<-function(RGset=NULL,globalvarexplore=NULL,
     detectionpvals<-lapply(listsamples,function(sample) sesame::pOOBAH(sample, return.pval=TRUE))
     # old approach: detectionpvals<-lapply(listsamples,function(sample) sample@extra$pvals[["pOOBAH"]])
     detectionpvals<-do.call(cbind,detectionpvals)
+    colnames(detectionpvals)<-sampleNames(RGset)
     detectionpvalssave<-detectionpvals
     detectionpvals[detectionpvals>DetectionPvalCutoff]<-NA
 
@@ -380,6 +381,7 @@ ExploratoryDataAnalysis<-function(RGset=NULL,globalvarexplore=NULL,
   if(DetectionPvalMethod=="ewastools"){
 
     detectionpvals<-ewastools::detectionP.minfi(RGset)
+    colnames(detectionpvals)<-sampleNames(RGset)
     detectionpvalssave<-detectionpvals
     detectionpvals[detectionpvals>DetectionPvalCutoff]<-NA
 
@@ -515,3 +517,4 @@ probeFiltering <- function(RGset, cutbead=3, zeroint=TRUE, verbose=TRUE){
                colData = colData(RGset),
                annotation = annotation(RGset))
 }
+

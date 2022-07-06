@@ -1,9 +1,10 @@
 ## ----eval=FALSE---------------------------------------------------------------
 #  
 #  ## First need to install required packages if you don't have them already
-#  install.packages(c("ggplot2","gplots","reshape","RPMM","RefFreeEWAS","pvclust",
-#                     "GGally","Hmisc","MASS","sandwich", "lmtest","plyr","remotes","devtools"))
+#  install.packages(c("ggplot2","gplots","reshape","RPMM","pvclust","doParallel",
+#                     "GGally","Hmisc","MASS","sandwich", "lmtest","plyr","remotes","devtools","parallel","dplyr"))
 #  
+#  remotes::install_version("RefFreeEWAS", "2.2")
 #  remotes::install_version("heatmap.plus", "1.3")
 #  
 #  if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -13,18 +14,17 @@
 #                         "IlluminaHumanMethylation450kmanifest",
 #                         "IlluminaHumanMethylation450kanno.ilmn12.hg19",
 #                         "IlluminaHumanMethylationEPICanno.ilm10b4.hg19",
+#                         "TxDb.Hsapiens.UCSC.hg19.knownGene",
+#                         "org.Hs.eg.db","FDb.InfiniumMethylation.hg19",
+#                         "FlowSorted.CordBloodCombined.450k",
+#                         "FlowSorted.Blood.EPIC",
 #                         "FlowSorted.CordBlood.450k",
 #                         "FlowSorted.Blood.450k",
 #                         "illuminaio"))
 #  
-#  if (!requireNamespace("BiocManager", quietly = TRUE))
-#      install.packages("BiocManager")
-#  
-#  BiocManager::install("FlowSorted.Blood.EPIC")
-#  
 #  remotes::install_github("bokeh/rbokeh")
 #  remotes::install_github("ki-tools/growthstandards")
-#  devtools::install_github("hhhh5/ewastools")
+#  remotes::install_github("hhhh5/ewastools")
 #  
 #  ## If ExperimentHub (>1.17.2), need to update caching location
 #  moveFiles<-function(package){
@@ -48,9 +48,11 @@
 #  ## If recently installed sesame, need to cache the associated annotation data
 #  ## This only needs to be done once per new installation of sesame
 #  sesameData::sesameDataCacheAll()
+#  eh<-ExperimentHub()
+#  eh[["EH6019"]] ## one that isn't automatically downloaded
 #  
 #  ## Need to then install package, specifying path to the source package
-#  install.packages("F:\\PACE\\PACEanalysis_0.1.6.tar.gz",
+#  install.packages("G:\\PACE\\PACEanalysis_0.1.8.tar.gz",
 #                   repos = NULL, type="source")
 #  
 
@@ -58,8 +60,9 @@
 #  ## Attach package
 #  library(PACEanalysis)
 #  
-#  setwd("F:\\PACE\\Birthweight-placenta")
+#  setwd("G:\\PACE\\Birthweight-placenta")
 #  allphenodata<-read.csv("All_Pheno_and_Basenames.csv",header=TRUE)
+#  dim(allphenodata)
 #  
 #  ## If the data.frame you are going to specify as PhenoData does not include
 #  ## the column "Basename", you will need to also load a data.frame you are
@@ -159,7 +162,7 @@
 #  
 #  for (i in 1:nrow(modelstorun)){
 #  
-#    cat("Outcome:",modelstorun$varofinterest[i],"\n")
+#    cat("OutcomG:",modelstorun$varofinterest[i],"\n")
 #    tempresults<-dataAnalysis(phenofinal=phenodataframe,
 #                    betafinal=Betasnooutliers[1:100,], ## restricting to first 100 loci
 #                    array="450K",
@@ -192,7 +195,7 @@
 ## ----eval=FALSE---------------------------------------------------------------
 #  for (i in 1:nrow(modelstorun)){
 #  
-#    cat("Outcome:",modelstorun$varofinterest[i],"\n")
+#    cat("OutcomG:",modelstorun$varofinterest[i],"\n")
 #    tempresults<-dataAnalysis(phenofinal=phenodataframe,
 #                    betafinal=Betasnooutliers,
 #                    array="450K",
@@ -252,7 +255,7 @@
 #  
 #  for (i in 1:nrow(modelstorun)){
 #  
-#    cat("Outcome:",modelstorun$varofinterest[i],"\n")
+#    cat("OutcomG:",modelstorun$varofinterest[i],"\n")
 #    tempresults<-dataAnalysis(phenofinal=phenodataframe,
 #                    betafinal=Betasnooutliers,
 #                    array="450K",

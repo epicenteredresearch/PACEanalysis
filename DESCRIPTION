@@ -37,7 +37,8 @@ Imports:
   ewastools,
   matrixStats,
   parallel,
-  doParallel
+  doParallel,
+  dplyr
 Depends: 
   R (>= 4.1),
   minfi,
@@ -45,6 +46,7 @@ Depends:
   Hmisc,
   MASS,
   sandwich,
+  lmtest,
   plyr,
   IlluminaHumanMethylation450kanno.ilmn12.hg19,
   IlluminaHumanMethylationEPICanno.ilm10b4.hg19
