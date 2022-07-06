@@ -1,7 +1,9 @@
 # PACEanalysis
 
 ## UPDATES IN VERSION 0.1.8
+- Updates to ensure compatible with updates to dependencies 
 - Updating code for sesame detection p-values due to changes in sesame package
+- Adding option to run site-specific analysis in parallel to speed up computation time, see dataAnalysis function for more details
 
 ## UPDATES IN VERSION 0.1.7
 - Now creates two "Table 1"s - one for all samples, and one complete case version
