@@ -75,6 +75,7 @@ moveFiles(package)
 sesameData::sesameDataCacheAll()
 eh<-ExperimentHub()
 eh[["EH6019"]] ## one that isn't automatically downloaded
+eh[["EH3677"]] ## one that isn't automatically downloaded
 
 ## Need to then install package, specifying path to the source package
 install.packages("E:\\PACE\\PACEanalysis_0.1.8.tar.gz",

@@ -1184,7 +1184,7 @@ runmodelfunction<-function(methyldat=NULL,vartype=NULL,varofinterest=NULL,adjust
     cl <- parallel::makeCluster(number_cores)
     doParallel::registerDoParallel(cl)
     parallel::clusterExport(cl,c("inanalysis","modformula","maxit","rlm","Omega","error_message",
-                       "vartype","celladjust","robust","varofinterest","running_DMP_analysis","vcovHC","coeftest"))
+                       "vartype","celladjust","robust","varofinterest","running_DMP_analysis","vcovHC","coeftest"),envir=environment())
     
     DMP_list_out <- parallel::parApply(cl,methyldat,1, function(x) running_DMP_analysis(x=x,inanalysis=inanalysis,Omega=Omega,
                                                                                         modformula=modformula,vartype=vartype,

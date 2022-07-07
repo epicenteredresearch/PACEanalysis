@@ -36,8 +36,6 @@ Imports:
   FlowSorted.CordBloodCombined.450k,
   ewastools,
   matrixStats,
-  parallel,
-  doParallel,
   dplyr
 Depends: 
   R (>= 4.1),
@@ -47,6 +45,8 @@ Depends:
   MASS,
   sandwich,
   lmtest,
+  parallel,
+  doParallel,
   plyr,
   IlluminaHumanMethylation450kanno.ilmn12.hg19,
   IlluminaHumanMethylationEPICanno.ilm10b4.hg19
