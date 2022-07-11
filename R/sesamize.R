@@ -1,32 +1,6 @@
-#' "fix" an RGChannelSet (for which IDATs may be unavailable) with Sesame
-#' The input is an RGSet and the output is a sesamized minfi::GenomicRatioSet
-#' 
-#' \code{HDF5Array} package required.
-#' 
-#' @param rgSet an RGChannelSet, perhaps with colData of various flavors
-#' @param naFrac maximum NA fraction for a probe before it gets dropped (1)
-#' @param BPPARAM get parallel with MulticoreParam(n)
-#' @param HDF5 is the rgSet HDF5-backed? if so, avoid eating RAM (perhaps)
-#' @param HDF5SEdestination character(1) path to where the
-#' HDF5-backed GenomicRatioSet will be stored
-#' @param replace logical(1) passed to saveHDF5SummarizedExperiment
-#' @note We employ BPREDO for a second chance if bplapply hits an error.
-#' @return a sesamized GenomicRatioSet
-#' @import BiocParallel
-#' @importFrom S4Vectors metadata
-#' @importFrom S4Vectors metadata<-
-#' @importFrom SummarizedExperiment assays
-#' @examples
-#' 
-#' \dontrun{
-#'
-#' library(FlowSorted.CordBloodNorway.450k)
-#' library(BiocParallel)
-#' sesamize(FlowSorted.CordBloodNorway.450k[,1:2],
-#'     BPPARAM=MulticoreParam(2))
-#'
-#' }
-#' @export 
+## "fix" an RGChannelSet (for which IDATs may be unavailable) with Sesame
+## The input is an RGSet and the output is a sesamized minfi::GenomicRatioSet
+
 sesamize <- function(
     rgSet, naFrac=1, BPPARAM=BiocParallel::SerialParam(), HDF5=NULL,
     HDF5SEdestination=paste0(tempdir(check=TRUE), "/sesamize_HDF5_scratch"),
@@ -164,26 +138,8 @@ guessMinfiAnnotation <- function(ptf, annotation = NA) {
   }
 }
 
-#' Convert sesame::SigDF to minfi::RGChannelSet
-#'
-#' This function does not support the mouse array.
-#' 
-#' @param sdfs a list of sesame::SigDF
-#' @param BPPARAM get parallel with MulticoreParam(n)
-#' @param annotation the minfi annotation string, guessed if not given
-#' @return a minfi::RGChannelSet
-#' @import BiocParallel
-#' @examples
-#'
-#' \donttest{
-#'
-#' sesameDataCache("EPIC") # if not done yet
-#' sdf <- sesameDataGet('EPIC.1.SigDF')
-#' rgSet <- SigDFsToRGChannelSet(sdf)
-#'
-#' }
-#' 
-#' @export 
+## Convert sesame::SigDF to minfi::RGChannelSet
+
 SigDFsToRGChannelSet <- function(sdfs, BPPARAM=BiocParallel::SerialParam(), annotation=NA) {
   
   if (is(sdfs, 'SigDF')) {
@@ -203,21 +159,8 @@ SigDFsToRGChannelSet <- function(sdfs, BPPARAM=BiocParallel::SerialParam(), anno
 }
 
 
-#' Lookup address in one sample
-#'
-#' Lookup address and transform address to probe
-#'
-#' Translate data in chip address to probe address.
-#' Type I probes can be separated into Red and Grn channels. The
-#' methylated allele and unmethylated allele are at different
-#' addresses. For type II probes methylation allele and unmethylated allele are
-#' at the same address. Grn channel is for methylated allele and Red channel is
-#' for unmethylated allele. The out-of-band signals are type I probes measured
-#' using the other channel.
-#'
-#' @param dm data frame in chip address, 2 columns: cy3/Grn and cy5/Red
-#' @param mft a data frame with columns Probe_ID, M, U and col
-#' @return a SigDF, indexed by probe ID address
+## Lookup address in one sample
+
 chipAddressToSignal <- function(dm, mft) {
   
   ## Infinium-I
@@ -288,54 +231,8 @@ RGChannelSet1ToSigDF <- function(rgSet1, manifest = NULL, controls = NULL) {
   sdf
 }
 
-#' Convert RGChannelSet (minfi) to a list of SigDF (SeSAMe)
-#'
-#' Notice the colData() and rowData() is lost.
-#'
-#' @param rgSet a minfi::RGChannelSet
-#' @param BPPARAM get parallel with MulticoreParam(n)
-#' @param manifest manifest file
-#' @return a list of sesame::SigDF
-#' @import BiocParallel
-#' @examples
-#' 
-#' \donttest{
-#'
-#' library(FlowSorted.Blood.450k)
-#' rgSet <- FlowSorted.Blood.450k[,1:2]
-#' sdfs <- RGChannelSetToSigDFs(rgSet)
-#' ## set names(sdfs) yourself. each data has a different place
-#' ## to store sample name
-#'
-#' }
-#' 
-#' @export
-RGChannelSetToSigDFs <- function(
-    rgSet, manifest=NULL, BPPARAM=BiocParallel::SerialParam()) {
-  
-  samples <- colnames(rgSet)
-  BiocParallel::bplapply(
-    seq_len(ncol(rgSet)), function(i) {
-      RGChannelSet1ToSigDF(rgSet[,i], manifest=manifest)
-    }, BPPARAM=BPPARAM)
-}
+## Convert RGChannelSet (minfi) to a list of SigDF (SeSAMe)
 
-#' Convert one sesame::SigDF to minfi::RatioSet
-#'
-#' @param sdf a sesame::SigDF
-#' @param annotation minfi annotation string
-#' @return a minfi::RatioSet
-#' @examples
-#' 
-#' \donttest{
-#' 
-#' sesameDataCache("EPIC") # if not done yet
-#' sdf <- sesameDataGet('EPIC.1.SigDF')
-#' ratioSet <- SigDFToRatioSet(sdf)
-#'
-#' }
-#'
-#' @export
 SigDFToRatioSet <- function(sdf, annotation = NA) {
   Beta <- as.matrix(sesame::getBetas(sdf))
   CN <- as.matrix(log2(sesame::totalIntensities(sdf))[rownames(Beta)])

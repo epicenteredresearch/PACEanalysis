@@ -50,9 +50,10 @@
 #  sesameData::sesameDataCacheAll()
 #  eh<-ExperimentHub()
 #  eh[["EH6019"]] ## one that isn't automatically downloaded
+#  eh[["EH3677"]] ## one that isn't automatically downloaded
 #  
 #  ## Need to then install package, specifying path to the source package
-#  install.packages("G:\\PACE\\PACEanalysis_0.1.8.tar.gz",
+#  install.packages("E:\\PACE\\PACEanalysis_0.1.8.tar.gz",
 #                   repos = NULL, type="source")
 #  
 
@@ -77,7 +78,7 @@
 #                    IDATdir="H:\\UCLA\\PACE\\Birthweight-placenta\\IDATfiles",
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
 #                    savelog=TRUE,
-#                    cohort="HEBC",analysisdate="20201229")
+#                    cohort="HEBC",analysisdate="20220709")
 #  
 #  EDAresults<-ExploratoryDataAnalysis(RGset=exampledat,
 #                    globalvarexplore=c("BWT","Sex"),
@@ -87,7 +88,7 @@
 #                    FilterZeroIntensities=TRUE,
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
 #                    savelog=TRUE,
-#                    cohort="HEBC",analysisdate="20201229")
+#                    cohort="HEBC",analysisdate="20220709")
 
 ## ----eval=FALSE---------------------------------------------------------------
 #  
@@ -98,21 +99,21 @@
 #                    compositeCellType="Placenta",
 #                    KchooseManual=NULL,
 #                    savelog=TRUE,
-#                    cohort="HEBC",analysisdate="20201229")
+#                    cohort="HEBC",analysisdate="20220709")
 #  
 #  betasabovedetection<-detectionMask(processedBetas=processedOut$processedBetas,
 #                                    DetectionPvals=EDAresults$DetectionPval,
 #                                    DetectionPvalCutoff=0.05,
 #                                    IndicatorGoodIntensity=EDAresults$IndicatorGoodIntensity,
 #                                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
-#                                    cohort="HEBC",analysisdate="20201229")
+#                                    cohort="HEBC",analysisdate="20220709")
 #  
 #  Betasnooutliers<-outlierprocess(processedBetas=betasabovedetection,
 #                                    quantilemethod="Quantile",
 #                                    trimming=TRUE,
 #                                    pct=0.25,
 #                                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
-#                                    cohort="HEBC",analysisdate="20201229")
+#                                    cohort="HEBC",analysisdate="20220709")
 #  
 
 ## ----eval=FALSE---------------------------------------------------------------
@@ -120,8 +121,8 @@
 #  ## If you closed prior R session, you can load list of pre-processed objects
 #  ## that is automatically saved by the preprocessingofData function
 #  
-#  setwd("H:\\UCLA\\PACE\\Birthweight-placenta\\HEBC_20201229_Output")
-#  load("HEBC_20201229_Preprocessed.RData")
+#  setwd("H:\\UCLA\\PACE\\Birthweight-placenta\\HEBC_20220709_Output")
+#  load("HEBC_20220709_Preprocessed.RData")
 #  
 #  phenodataframe<-as.data.frame(pData(processedOut$mset))
 #  phenodataframe$LBWbin<-ifelse(phenodataframe$BWT<2500,1,0)
@@ -160,6 +161,10 @@
 
 ## ----eval=FALSE---------------------------------------------------------------
 #  
+#  ## if running in parallel, checking the number of available cores
+#  library(parallel)
+#  detectCores() # should probably choose at least one less than the number available
+#  
 #  for (i in 1:nrow(modelstorun)){
 #  
 #    cat("OutcomG:",modelstorun$varofinterest[i],"\n")
@@ -185,9 +190,11 @@
 #                    RestrictToSubset=FALSE,
 #                    RestrictionVar=NULL,
 #                    RestrictToIndicator=NULL,
+#                    number_cores=8,
+#                    runparallel=TRUE,
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
 #                    savelog=TRUE,
-#                    cohort="HEBC",analysisdate="20210103",analysisname="main")
+#                    cohort="HEBC",analysisdate="20220709",analysisname="main")
 #  
 #  }
 #  
@@ -218,9 +225,11 @@
 #                    RestrictToSubset=FALSE,
 #                    RestrictionVar=NULL,
 #                    RestrictToIndicator=NULL,
+#                    number_cores=8,
+#                    runparallel=TRUE,
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
 #                    savelog=TRUE,
-#                    cohort="HEBC",analysisdate="20210103")
+#                    cohort="HEBC",analysisdate="20220709")
 #  
 #      tempresultsNonHispanicWhite<-dataAnalysis(phenofinal=phenodataframe,
 #                    betafinal=Betasnooutliers,
@@ -244,9 +253,11 @@
 #                    RestrictToSubset=TRUE,
 #                    RestrictionVar="Ethnic",
 #                    RestrictToIndicator="1",
+#                    number_cores=8,
+#                    runparallel=TRUE,
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
 #                    savelog=TRUE,
-#                    cohort="HEBC",analysisdate="20210103",analysisname="main")
+#                    cohort="HEBC",analysisdate="20220709",analysisname="main")
 #  
 #  }
 #  
@@ -278,9 +289,11 @@
 #                    RestrictToSubset=FALSE,
 #                    RestrictionVar=NULL,
 #                    RestrictToIndicator=NULL,
+#                    number_cores=8,
+#                    runparallel=TRUE,
 #                    destinationfolder="H:\\UCLA\\PACE\\Birthweight-placenta",
 #                    savelog=TRUE,
-#                    cohort="HEBC",analysisdate="20210103",analysisname="main")
+#                    cohort="HEBC",analysisdate="20220709",analysisname="main")
 #  
 #  }
 #  
