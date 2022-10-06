@@ -1,6 +1,6 @@
 # PACEanalysis
 
-## UPDATES IN VERSION 0.1.8
+## UPDATES IN VERSION 0.1.9
 - Adding RGChannelSetToSigDFs for converting between minfi to sesame for estimation of detection p-values
 
 ## UPDATES IN VERSION 0.1.8
