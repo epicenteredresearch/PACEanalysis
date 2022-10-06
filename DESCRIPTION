@@ -1,7 +1,7 @@
 Package: PACEanalysis
 Type: Package
 Title: Analysis of PACE DNA Methylation Microarray Data
-Version: 0.1.8
+Version: 0.1.9
 Author: Alexandra Binder
 Maintainer: Alexandra Binder <ambinder@hawaii.edu>
 Description: Reads in IDAT files, performs data quality 

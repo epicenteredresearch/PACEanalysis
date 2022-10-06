@@ -231,6 +231,17 @@ RGChannelSet1ToSigDF <- function(rgSet1, manifest = NULL, controls = NULL) {
   sdf
 }
 
+#' Convert RGChannelSet (minfi) to a list of SigDF (SeSAMe)
+RGChannelSetToSigDFs <- function(
+    rgSet, manifest=NULL, BPPARAM=BiocParallel::SerialParam()) {
+  
+  samples <- colnames(rgSet)
+  BiocParallel::bplapply(
+    seq_len(ncol(rgSet)), function(i) {
+      RGChannelSet1ToSigDF(rgSet[,i], manifest=manifest)
+    }, BPPARAM=BPPARAM)
+}
+
 ## Convert RGChannelSet (minfi) to a list of SigDF (SeSAMe)
 
 SigDFToRatioSet <- function(sdf, annotation = NA) {
