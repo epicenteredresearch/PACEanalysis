@@ -1,6 +1,9 @@
 # PACEanalysis
 
 ## UPDATES IN VERSION 0.1.8
+- Adding RGChannelSetToSigDFs for converting between minfi to sesame for estimation of detection p-values
+
+## UPDATES IN VERSION 0.1.8
 - Updates to ensure compatible with updates to dependencies 
 - Updating code for sesame detection p-values due to changes in sesame package
 - Adding option to run site-specific analysis in parallel to speed up computation time, see dataAnalysis function for more details
